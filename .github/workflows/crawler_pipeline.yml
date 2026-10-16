@@ -32,7 +32,6 @@ jobs:
         run: |
           mkdir -p crawler_output
           python run_crawler.py
-
       - name: Sync, Partition & Upload
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
@@ -42,4 +41,5 @@ jobs:
           CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
         run: |
           python update_pipeline.py
-          HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
+
+     
