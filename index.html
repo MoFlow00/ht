@@ -6,7 +6,6 @@
     <title>مستكشف تيليجرام السحابي</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-wasm.js"></script>
     <style>
         :root {
             --bg-page: #0b1120;
@@ -33,6 +32,7 @@
             padding-bottom: 60px;
         }
 
+        /* شريط التحكم العلوي */
         header {
             position: sticky;
             top: 0;
@@ -108,6 +108,7 @@
             cursor: pointer;
         }
 
+        /* حاوية البطاقات */
         .feed-container {
             max-width: 620px;
             margin: 12px auto;
@@ -221,6 +222,7 @@
             font-weight: 600;
         }
 
+        /* رسائل التحميل والأخطاء */
         .status-box {
             text-align: center;
             padding: 24px 10px;
@@ -251,13 +253,13 @@
         <div class="header-box">
             <div class="header-top">
                 <div class="brand">⚡ تليجرام كلاود</div>
-                <select id="yearSelect" class="year-dropdown" onchange="switchYear(this.value)">
+                <select id="yearSelect" class="year-dropdown" onchange="window.switchYear(this.value)">
                     <option value="2026">2026</option>
                 </select>
             </div>
             <div class="search-row">
-                <input type="text" id="searchInput" placeholder="ابحث في نصوص المنشورات..." onkeypress="if(event.key === 'Enter') triggerSearch()">
-                <button onclick="triggerSearch()">بحث</button>
+                <input type="text" id="searchInput" placeholder="ابحث في نصوص المنشورات..." onkeypress="if(event.key === 'Enter') window.triggerSearch()">
+                <button onclick="window.triggerSearch()">بحث</button>
             </div>
         </div>
     </header>
@@ -269,7 +271,10 @@
         جارٍ تهيئة محرك البيانات...
     </div>
 
-    <script>
+    <!-- استدعاء المكتبة كـ Module -->
+    <script type="module">
+        import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
+
         const REPO_ID = "Moo408/dat-9f82c4";
         const HF_BASE = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/`;
 
@@ -285,7 +290,7 @@
 
         async function init() {
             try {
-                // 1. تحديد الحزم يدوياً لضمان توافقها
+                // إعداد الـ Worker للعمل كـ Blob لتخطي مشاكل GitHub Pages CORS
                 const MANUAL_BUNDLES = {
                     mvp: {
                         mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-mvp.wasm',
@@ -298,8 +303,6 @@
                 };
 
                 const bundle = await duckdb.selectBundle(MANUAL_BUNDLES);
-
-                // 2. تحميل الـ Worker كـ Blob لتخطي حظر CORS على سيرفرات GitHub Pages
                 const workerReq = await fetch(bundle.mainWorker);
                 const workerText = await workerReq.text();
                 const workerBlob = new Blob([workerText], { type: 'text/javascript' });
@@ -307,12 +310,17 @@
                 
                 const worker = new Worker(workerUrl);
 
-                // 3. تهيئة قاعدة البيانات
                 db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
                 await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
                 URL.revokeObjectURL(workerUrl);
 
                 conn = await db.connect();
+
+                try {
+                    await conn.query("INSTALL httpfs; LOAD httpfs;");
+                } catch (e) {
+                    console.log("httpfs built-in loaded");
+                }
 
                 await loadManifest();
                 await setupPartition(selectedYear);
@@ -356,7 +364,6 @@
             const fileName = `posts_${year}.parquet`;
             const fileUrl = `${HF_BASE}${fileName}`;
             try {
-                // الاعتماد على Virtual File System لتخطي قيود الروابط المباشرة
                 await db.registerFileURL(fileName, fileUrl, duckdb.DuckDBDataProtocol.HTTP, false);
                 currentTableName = fileName;
             } catch (e) {
@@ -485,16 +492,17 @@
             statusEl.innerHTML = showLoader ? `<div class="spinner"></div> ${msg}` : msg;
         }
 
-        async function switchYear(year) {
+        // جعل الدوال متاحة للـ DOM
+        window.switchYear = async function(year) {
             selectedYear = year;
             await setupPartition(year);
             await fetchFeed(true);
-        }
+        };
 
-        function triggerSearch() {
+        window.triggerSearch = function() {
             activeSearch = document.getElementById("searchInput").value;
             fetchFeed(true);
-        }
+        };
 
         window.addEventListener("scroll", () => {
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
