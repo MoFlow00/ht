@@ -33,7 +33,6 @@
             padding-bottom: 60px;
         }
 
-        /* شريط التحكم العلوي */
         header {
             position: sticky;
             top: 0;
@@ -109,7 +108,6 @@
             cursor: pointer;
         }
 
-        /* حاوية البطاقات */
         .feed-container {
             max-width: 620px;
             margin: 12px auto;
@@ -223,12 +221,12 @@
             font-weight: 600;
         }
 
-        /* رسائل التحميل والأخطاء */
         .status-box {
             text-align: center;
             padding: 24px 10px;
             color: var(--text-sub);
             font-size: 0.9rem;
+            word-wrap: break-word;
         }
 
         .spinner {
@@ -268,7 +266,7 @@
 
     <div class="status-box" id="statusBox">
         <div class="spinner"></div>
-        جارٍ الاتصال بقاعدة البيانات السحابية...
+        جارٍ تهيئة محرك البيانات...
     </div>
 
     <script>
@@ -283,34 +281,51 @@
         let isFetching = false;
         let hasMore = true;
         let activeSearch = "";
+        let currentTableName = "";
 
         async function init() {
             try {
-                const bundles = duckdb.getJsDelivrBundles();
-                const bundle = await duckdb.selectBundle(bundles);
-                const worker = await duckdb.createWorker(bundle.mainWorker);
+                // 1. تحديد الحزم يدوياً لضمان توافقها
+                const MANUAL_BUNDLES = {
+                    mvp: {
+                        mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-mvp.wasm',
+                        mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-mvp.worker.js',
+                    },
+                    eh: {
+                        mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-eh.wasm',
+                        mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-eh.worker.js',
+                    },
+                };
+
+                const bundle = await duckdb.selectBundle(MANUAL_BUNDLES);
+
+                // 2. تحميل الـ Worker كـ Blob لتخطي حظر CORS على سيرفرات GitHub Pages
+                const workerReq = await fetch(bundle.mainWorker);
+                const workerText = await workerReq.text();
+                const workerBlob = new Blob([workerText], { type: 'text/javascript' });
+                const workerUrl = URL.createObjectURL(workerBlob);
+                
+                const worker = new Worker(workerUrl);
+
+                // 3. تهيئة قاعدة البيانات
                 db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
                 await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+                URL.revokeObjectURL(workerUrl);
+
                 conn = await db.connect();
 
-                // تفعيل دعم HTTP والملفات السحابية داخل DuckDB
-                try {
-                    await conn.query("INSTALL httpfs; LOAD httpfs;");
-                } catch (e) {
-                    console.log("httpfs built-in loaded");
-                }
-
                 await loadManifest();
+                await setupPartition(selectedYear);
                 await fetchFeed(true);
             } catch (err) {
                 console.error("DuckDB Init Error:", err);
-                setStatus("خطأ في تشغيل محرك البيانات. يرجى إعادة تحديث الصفحة.", false);
+                setStatus(`فشل التهيئة الأولي:<br><span style="color:#f87171;font-size:0.8rem">${err.message || err}</span>`, false);
             }
         }
 
         async function loadManifest() {
             try {
-                const res = await fetch(`${HF_BASE}manifest.json`);
+                const res = await fetch(`${HF_BASE}manifest.json?v=${Date.now()}`);
                 if (!res.ok) return;
                 const manifest = await res.json();
                 const select = document.getElementById("yearSelect");
@@ -337,13 +352,26 @@
             }
         }
 
+        async function setupPartition(year) {
+            const fileName = `posts_${year}.parquet`;
+            const fileUrl = `${HF_BASE}${fileName}`;
+            try {
+                // الاعتماد على Virtual File System لتخطي قيود الروابط المباشرة
+                await db.registerFileURL(fileName, fileUrl, duckdb.DuckDBDataProtocol.HTTP, false);
+                currentTableName = fileName;
+            } catch (e) {
+                console.error("Registration error:", e);
+                throw e;
+            }
+        }
+
         async function fetchFeed(isReset = false) {
             if (isFetching || (!hasMore && !isReset)) return;
             isFetching = true;
 
             const statusEl = document.getElementById("statusBox");
             statusEl.style.display = "block";
-            statusEl.innerHTML = '<div class="spinner"></div> جلب المنشورات...';
+            statusEl.innerHTML = '<div class="spinner"></div> جلب البيانات من السحابة...';
 
             if (isReset) {
                 offset = 0;
@@ -351,14 +379,12 @@
                 document.getElementById("feed").innerHTML = "";
             }
 
-            const targetUrl = `${HF_BASE}posts_${selectedYear}.parquet`;
             let sql = "";
-
             if (activeSearch.trim()) {
                 const cleanText = activeSearch.replace(/'/g, "''");
                 sql = `
                     SELECT username, post_id, text, image, video, media_type, views, date 
-                    FROM read_parquet('${targetUrl}') 
+                    FROM '${currentTableName}' 
                     WHERE text ILIKE '%${cleanText}%' 
                     ORDER BY date DESC 
                     LIMIT ${LIMIT} OFFSET ${offset};
@@ -366,7 +392,7 @@
             } else {
                 sql = `
                     SELECT username, post_id, text, image, video, media_type, views, date 
-                    FROM read_parquet('${targetUrl}') 
+                    FROM '${currentTableName}' 
                     ORDER BY date DESC 
                     LIMIT ${LIMIT} OFFSET ${offset};
                 `;
@@ -396,7 +422,7 @@
                 }
             } catch (err) {
                 console.error("DuckDB Query Error:", err);
-                setStatus("تعذر جلب البيانات من السحابة، يرجى المحاولة مرة أخرى.", false);
+                setStatus(`خطأ في جلب البيانات:<br><span style="color:#f87171;font-size:0.8rem">${err.message || err}</span>`, false);
             } finally {
                 isFetching = false;
             }
@@ -409,7 +435,6 @@
                 const card = document.createElement("article");
                 card.className = "card";
 
-                // معالجة الفيديو والميديا
                 let mediaHtml = "";
                 const isVideo = p.media_type === "video" || (p.video && p.video.trim() !== "");
 
@@ -460,9 +485,10 @@
             statusEl.innerHTML = showLoader ? `<div class="spinner"></div> ${msg}` : msg;
         }
 
-        function switchYear(year) {
+        async function switchYear(year) {
             selectedYear = year;
-            fetchFeed(true);
+            await setupPartition(year);
+            await fetchFeed(true);
         }
 
         function triggerSearch() {
@@ -470,7 +496,6 @@
             fetchFeed(true);
         }
 
-        // التمرير التلقائي اللانهائي
         window.addEventListener("scroll", () => {
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
                 if (!isFetching && hasMore) {
