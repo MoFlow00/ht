@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>خلاصة تيليجرام</title>
+    <title>تليجرام فيد</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -33,6 +33,7 @@
             padding-bottom: 60px;
         }
 
+        /* شريط بحث خفيف وأنيق بدون زحمة */
         header {
             position: sticky;
             top: 0;
@@ -40,61 +41,50 @@
             background: rgba(255, 255, 255, 0.96);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid var(--border);
-            padding: 10px 14px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            padding: 8px 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
 
-        .header-box {
+        .search-box-wrap {
             max-width: 600px;
             margin: 0 auto;
             display: flex;
-            flex-direction: column;
-            gap: 8px;
+            gap: 6px;
         }
 
-        .brand {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: var(--primary);
-        }
-
-        .search-row {
-            display: flex;
-            gap: 8px;
-        }
-
-        .search-row input {
+        .search-box-wrap input {
             flex: 1;
             background: #f8fafc;
             border: 1px solid var(--border);
             color: var(--text-main);
-            padding: 8px 14px;
+            padding: 7px 12px;
             border-radius: 8px;
             font-size: 0.9rem;
             outline: none;
         }
 
-        .search-row input:focus {
+        .search-box-wrap input:focus {
             border-color: var(--primary);
         }
 
-        .search-row button {
+        .search-box-wrap button {
             background: var(--primary);
             color: #ffffff;
             border: none;
-            padding: 0 18px;
+            padding: 0 16px;
             border-radius: 8px;
             font-weight: 700;
+            font-size: 0.88rem;
             cursor: pointer;
         }
 
         .feed-container {
             max-width: 600px;
-            margin: 12px auto;
-            padding: 0 10px;
+            margin: 10px auto;
+            padding: 0 8px;
             display: flex;
             flex-direction: column;
-            gap: 14px;
+            gap: 12px;
         }
 
         .card {
@@ -165,7 +155,6 @@
             align-items: center;
             justify-content: center;
             color: var(--text-sub);
-            transition: all 0.2s;
         }
 
         .btn-trash:hover {
@@ -207,7 +196,6 @@
             line-height: 1.6;
             word-break: break-word;
             white-space: pre-wrap;
-            color: #1e293b;
         }
 
         .card-body a {
@@ -234,14 +222,14 @@
 
         .status-box {
             text-align: center;
-            padding: 24px 10px;
+            padding: 20px 10px;
             color: var(--text-sub);
             font-size: 0.9rem;
         }
 
         .spinner {
-            width: 24px;
-            height: 24px;
+            width: 22px;
+            height: 22px;
             border: 3px solid var(--border);
             border-top: 3px solid var(--primary);
             border-radius: 50%;
@@ -250,20 +238,16 @@
         }
 
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            to { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
 
     <header>
-        <div class="header-box">
-            <div class="brand">⚡ تليجرام فيد (Edge API)</div>
-            <div class="search-row">
-                <input type="text" id="searchInput" placeholder="ابحث في المنشورات..." onkeypress="if(event.key === 'Enter') triggerSearch()">
-                <button onclick="triggerSearch()">بحث</button>
-            </div>
+        <div class="search-box-wrap">
+            <input type="text" id="searchInput" placeholder="بحث سريع في المنشورات..." onkeypress="if(event.key === 'Enter') triggerSearch()">
+            <button onclick="triggerSearch()">بحث</button>
         </div>
     </header>
 
@@ -275,13 +259,18 @@
     </div>
 
     <script>
-        // رابط الـ Worker الخاص بك
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
 
         let currentPage = 1;
         let isFetching = false;
         let hasMore = true;
         let activeQuery = "";
+
+        // دالة توليد رقم صفحة عشوائي عند الـ Refresh لعرض بوستات متجددة
+        function getRandomStartPage() {
+            // اختيار صفحة عشوائية بين 1 و 30 في الـ 3000 بوست المخزنين
+            return Math.floor(Math.random() * 25) + 1;
+        }
 
         async function fetchFeed(isReset = false) {
             if (isFetching || (!hasMore && !isReset)) return;
@@ -291,7 +280,8 @@
             statusEl.style.display = "block";
 
             if (isReset) {
-                currentPage = 1;
+                // إذا كان المستخدم يبحث، يبدأ من صفحة 1؛ لو تصفح عادي، يختار نقطة بداية عشوائية
+                currentPage = activeQuery.trim() ? 1 : getRandomStartPage();
                 hasMore = true;
                 document.getElementById("feed").innerHTML = "";
             }
@@ -306,7 +296,13 @@
                     currentPage++;
                     hasMore = data.has_more;
                 } else if (isReset) {
-                    document.getElementById("feed").innerHTML = '<div class="status-box">لا توجد منشورات حالياً في السيرفر. شغل الـ Action لضخ البيانات.</div>';
+                    // لو الصفحة العشوائية صادفت نهاية الأرشيف، نرجع لصفحة 1 فوراً
+                    if (!activeQuery.trim() && currentPage > 1) {
+                        currentPage = 1;
+                        isFetching = false;
+                        return fetchFeed(true);
+                    }
+                    document.getElementById("feed").innerHTML = '<div class="status-box">لا توجد منشورات مطابقة.</div>';
                 }
 
                 if (!hasMore) {
@@ -381,7 +377,6 @@
             return str.replace(/(https?:\/\/[^\s]+)/g, url => `<a href="${url}" target="_blank">${url}</a>`);
         }
 
-        // حذف القناة في السيرفر فوراً
         async function purgeChannel(username) {
             const cards = document.querySelectorAll(`[data-username="${username.toLowerCase()}"]`);
             cards.forEach(c => {
@@ -392,7 +387,6 @@
 
             try {
                 await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(username)}`, { method: "POST" });
-                console.log(`[✓] Purged @${username} globally.`);
             } catch (e) {
                 console.error("Purge error:", e);
             }
