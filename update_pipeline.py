@@ -1,9 +1,11 @@
 import os
 import json
+import requests
 import pandas as pd
 from datetime import datetime, timezone
 from huggingface_hub import HfApi, hf_hub_download
 
+# ==================== إعدادات البيئة ====================
 HF_REPO_ID = os.getenv("HF_REPO_ID", "Moo408/dat-9f82c4")
 HF_TOKEN = os.getenv("HF_TOKEN")
 LOCAL_DIR = "data_sync"
@@ -60,6 +62,38 @@ def sync_channels():
     remaining = total - checked
     return len(new_c_df), total, remaining
 
+def push_to_cloudflare_kv(posts_df):
+    """إرسال أحدث 3,000 منشور إلى Cloudflare KV لتصفح فوري وخفيف للموبايل"""
+    cf_token = os.getenv("CF_API_TOKEN")
+    cf_account = os.getenv("CF_ACCOUNT_ID")
+    cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
+
+    if not (cf_token and cf_account and cf_kv_id):
+        print("[-] Skipping Cloudflare KV push: Secrets missing.")
+        return
+
+    print("[*] Uploading top 3,000 latest posts to Cloudflare KV...")
+    if "date" in posts_df.columns:
+        posts_df = posts_df.sort_values(by="date", ascending=False)
+
+    # اختيار الحقول الأساسية لتقليل حجم الـ JSON المرفوع
+    cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
+    available_cols = [c for c in cols_to_keep if c in posts_df.columns]
+    
+    latest_subset = posts_df[available_cols].head(3000).fillna("").to_dict(orient="records")
+
+    url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/latest_posts"
+    headers = {
+        "Authorization": f"Bearer {cf_token}",
+        "Content-Type": "application/json"
+    }
+
+    res = requests.put(url, headers=headers, json=latest_subset)
+    if res.status_code == 200:
+        print("[✓] Successfully synced latest posts to Cloudflare KV Edge!")
+    else:
+        print(f"[-] Cloudflare KV sync failed: {res.text}")
+
 def sync_partitioned_posts():
     new_p_path = os.path.join(CRAWLER_DIR, "p.parquet")
     if not os.path.exists(new_p_path):
@@ -77,6 +111,7 @@ def sync_partitioned_posts():
     except Exception:
         pass
 
+    all_2026_df = pd.DataFrame()
     total_posts_all_years = 0
 
     for year in target_years:
@@ -95,6 +130,9 @@ def sync_partitioned_posts():
             merged_year = merged_year.drop_duplicates(subset=["id"], keep="last")
         else:
             merged_year = merged_year.drop_duplicates(subset=["username", "post_id"], keep="last")
+
+        if year == "2026":
+            all_2026_df = merged_year
 
         local_year_file = os.path.join(LOCAL_DIR, partition_filename)
         merged_year.to_parquet(local_year_file, compression="zstd", index=False)
@@ -125,20 +163,19 @@ def sync_partitioned_posts():
         commit_message="Update dataset partitions manifest"
     )
 
+    # دفع أحدث المنشورات لـ Cloudflare KV
+    if not all_2026_df.empty:
+        push_to_cloudflare_kv(all_2026_df)
+
     for y in manifest_data:
         total_posts_all_years += manifest_data[y].get("total_rows", 0)
 
     return len(new_posts_df), total_posts_all_years
 
 def main():
-    print("\n" + "=" * 65)
-    print("🚀 بدء مزامنة ورفع البيانات السحابية...")
-    print("=" * 65)
-
     c_crawled, c_total, c_remaining = sync_channels()
     p_crawled, p_total = sync_partitioned_posts()
 
-    # لوحة تقرير الإنجاز الرقمي
     c_checked = c_total - c_remaining
     progress_pct = (c_checked / c_total * 100) if c_total > 0 else 0
 
