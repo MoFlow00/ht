@@ -1,253 +1,196 @@
 import os
-import re
-import asyncio
-import aiohttp
-from bs4 import BeautifulSoup
+import json
 import pandas as pd
 from datetime import datetime
-from huggingface_hub import hf_hub_download
+from huggingface_hub import HfApi, hf_hub_download
 
-# ==================== إعدادات الكراولر ====================
-CHANNELS_TO_SCRAPE_PER_RUN = 500   # عدد القنوات بكل دورة
-CONCURRENT_REQUESTS = 10           # سرعة التوازي
-OUTPUT_DIR = "crawler_output"
-# ==========================================================
+# ==================== إعدادات البيئة ====================
+HF_REPO_ID = os.getenv("HF_REPO_ID", "Moo408/dat-9f82c4")
+HF_TOKEN = os.getenv("HF_TOKEN")
+LOCAL_DIR = "data_sync"
+CRAWLER_DIR = "crawler_output"
 
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+os.makedirs(LOCAL_DIR, exist_ok=True)
+api = HfApi(token=HF_TOKEN)
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-}
-
-def extract_channel_meta(soup, username):
-    """استخراج كامل بيانات القناة بدقة"""
-    title = username
-    description = ""
-    subscribers = "0"
-    avatar_url = ""
-    is_verified = False
-
+def extract_year_safely(date_val):
+    """استخراج السنة بأمان مع دعم القيم الفارغة والتالفة"""
+    if pd.isna(date_val) or not str(date_val).strip():
+        return "unknown"
+    s = str(date_val).strip()
     try:
-        # العنوان
-        title_el = soup.select_one(".tgme_channel_info_header_title span")
-        if title_el:
-            title = title_el.get_text(strip=True)
-
-        # الوصف
-        desc_el = soup.select_one(".tgme_channel_info_description")
-        if desc_el:
-            description = desc_el.get_text(separator="\n", strip=True)
-
-        # المشتركون
-        counters = soup.select(".tgme_channel_info_counter .counter_value")
-        for c in counters:
-            val = c.get_text(strip=True)
-            if "subscribers" in c.parent.get_text().lower() or "members" in c.parent.get_text().lower():
-                if "K" in val:
-                    subscribers = str(int(float(val.replace("K", "")) * 1000))
-                elif "M" in val:
-                    subscribers = str(int(float(val.replace("M", "")) * 1000000))
-                else:
-                    subscribers = re.sub(r"[^\d]", "", val) or "0"
-
-        # صورة البروفايل
-        avatar_el = soup.select_one(".tgme_page_photo_image img")
-        if avatar_el and avatar_el.get("src"):
-            avatar_url = avatar_el["src"]
-
-        # علامة التوثيق
-        if soup.select_one(".verified-icon"):
-            is_verified = True
+        # يدعم صيغ ISO مثل 2026-10-16T12:00:00
+        if len(s) >= 4 and s[:4].isdigit():
+            year_num = int(s[:4])
+            if 2015 <= year_num <= 2035:
+                return str(year_num)
+        # محاولة التحويل عبر pandas
+        dt = pd.to_datetime(s, errors="coerce")
+        if pd.notna(dt):
+            return str(dt.year)
     except Exception:
         pass
+    return "unknown"
 
-    return {
-        "username": str(username).lower(),
-        "title": str(title),
-        "description": str(description),
-        "subscribers": str(subscribers),
-        "avatar": str(avatar_url),
-        "verified": str(is_verified),
-        "last_checked": datetime.utcnow().isoformat()
-    }
+def sync_channels():
+    """دمج وتحديث ملف القنوات c.parquet"""
+    print("\n[*] --- Processing Channels (c.parquet) ---")
+    new_c_path = os.path.join(CRAWLER_DIR, "c.parquet")
+    if not os.path.exists(new_c_path):
+        print("[-] No new channels crawled this round.")
+        return
 
-def extract_post_data(msg, username):
-    """استخراج المنشور بكامل تفاصيله ومرفقاته"""
+    new_c_df = pd.read_parquet(new_c_path)
+    print(f"[+] Loaded {len(new_c_df):,} newly scraped/discovered channels.")
+
+    existing_c_df = pd.DataFrame()
     try:
-        post_div = msg.select_one(".tgme_widget_message")
-        if not post_div:
-            return None, set()
-
-        data_post = post_div.get("data-post", "")
-        if not data_post or "/" not in data_post:
-            return None, set()
-
-        post_id = data_post.split("/")[-1]
-        unique_id = f"{username}_{post_id}"
-
-        # النص والمنشنات
-        text_el = msg.select_one(".tgme_widget_message_text")
-        text = text_el.get_text(separator="\n", strip=True) if text_el else ""
-
-        discovered = set()
-        if text:
-            mentions = re.findall(r"@([a-zA-Z0-9_]{4,32})", text)
-            for m in mentions:
-                discovered.add(m.lower())
-
-        # الميديا (صور متعددة / فيديو / معاينة روابط)
-        images = []
-        video_url = ""
-        media_type = "text"
-
-        # صور البوست
-        photo_thumbs = msg.select(".tgme_widget_message_photo_wrap")
-        for thumb in photo_thumbs:
-            style = thumb.get("style", "")
-            match = re.search(r"background-image:url\('([^']+)'\)", style)
-            if match:
-                images.append(match.group(1))
-
-        # فيديو
-        video_el = msg.select_one("video")
-        if video_el and video_el.get("src"):
-            video_url = video_el["src"]
-            media_type = "video"
-        elif images:
-            media_type = "image"
-
-        primary_image = images[0] if images else ""
-
-        # المشاهدات
-        views = "0"
-        views_el = msg.select_one(".tgme_widget_message_views")
-        if views_el:
-            v_text = views_el.get_text(strip=True)
-            if "K" in v_text:
-                views = str(int(float(v_text.replace("K", "")) * 1000))
-            elif "M" in v_text:
-                views = str(int(float(v_text.replace("M", "")) * 1000000))
-            else:
-                views = re.sub(r"[^\d]", "", v_text) or "0"
-
-        # التاريخ
-        date_str = ""
-        time_el = msg.select_one("time")
-        if time_el and time_el.get("datetime"):
-            date_str = time_el.get("datetime")
-
-        # التفاعلات (Reactions) إن وجدت
-        reactions_count = 0
-        reaction_els = msg.select(".tgme_widget_message_reactions .tgme_reaction")
-        for r in reaction_els:
-            count_span = r.select_one(".tgme_reaction_count")
-            if count_span:
-                val = count_span.get_text(strip=True)
-                reactions_count += int(re.sub(r"[^\d]", "", val) or 0)
-
-        return {
-            "id": unique_id,
-            "username": str(username).lower(),
-            "post_id": str(post_id),
-            "text": str(text),
-            "image": str(primary_image),
-            "all_images": ",".join(images) if len(images) > 1 else str(primary_image),
-            "video": str(video_url),
-            "media_type": str(media_type),
-            "views": str(views),
-            "reactions": str(reactions_count),
-            "date": str(date_str)
-        }, discovered
-
-    except Exception:
-        return None, set()
-
-async def fetch_channel(session, semaphore, username):
-    url = f"https://t.me/s/{username}"
-    async with semaphore:
-        try:
-            async with session.get(url, headers=headers, timeout=12) as resp:
-                if resp.status == 200:
-                    html = await resp.text()
-                    soup = BeautifulSoup(html, "html.parser")
-                    
-                    channel_meta = extract_channel_meta(soup, username)
-                    posts = []
-                    discovered_channels = set()
-
-                    messages = soup.select(".tgme_widget_message_wrap")
-                    for msg in messages:
-                        post_data, found_ch = extract_post_data(msg, username)
-                        if post_data:
-                            posts.append(post_data)
-                        discovered_channels.update(found_ch)
-
-                    return channel_meta, posts, discovered_channels
-        except Exception:
-            pass
-    return None, [], set()
-
-async def main():
-    print("[*] Starting Enhanced Telegram Cloud Scraper...")
-
-    HF_TOKEN = os.getenv("HF_TOKEN")
-    HF_REPO_ID = os.getenv("HF_REPO_ID")
-    target_usernames = []
-
-    try:
-        print("[*] Fetching channel list from Hugging Face...")
-        c_path = hf_hub_download(
+        print("[*] Downloading existing c.parquet from Hugging Face...")
+        old_path = hf_hub_download(
             repo_id=HF_REPO_ID,
             filename="c.parquet",
             repo_type="dataset",
             token=HF_TOKEN
         )
-        c_df = pd.read_parquet(c_path, columns=["username"])
-        if "username" in c_df.columns:
-            target_usernames = c_df["username"].dropna().sample(min(CHANNELS_TO_SCRAPE_PER_RUN, len(c_df))).tolist()
-            print(f"[+] Successfully sampled {len(target_usernames)} target channels!")
+        existing_c_df = pd.read_parquet(old_path)
+        print(f"[+] Loaded existing c.parquet with {len(existing_c_df):,} channels.")
     except Exception as e:
-        print(f"[-] Could not load channels from HF: {e}")
+        print(f"[-] Note: Starting c.parquet fresh ({e})")
 
-    if not target_usernames:
-        target_usernames = ["telegram", "durov", "tginfo", "techcrunch", "pythonres"]
+    # دمج وتحديث القنوات
+    if not existing_c_df.empty:
+        merged_c = pd.concat([existing_c_df, new_c_df], ignore_index=True)
+    else:
+        merged_c = new_c_df
 
-    semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS)
-    all_new_posts = []
-    discovered_all = set()
-    channels_meta = []
+    # إزالة التكرار بالـ username مع الاحتفاظ بآخر تحديث
+    merged_c = merged_c.drop_duplicates(subset=["username"], keep="last")
+    out_c_file = os.path.join(LOCAL_DIR, "c.parquet")
+    merged_c.to_parquet(out_c_file, compression="zstd", index=False)
+    print(f"[✓] Saved updated c.parquet with {len(merged_c):,} channels.")
 
-    conn = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
-    async with aiohttp.ClientSession(connector=conn) as session:
-        tasks = [fetch_channel(session, semaphore, u) for u in target_usernames]
-        results = await asyncio.gather(*tasks)
+    print("[*] Uploading c.parquet to Hugging Face...")
+    api.upload_file(
+        path_or_fileobj=out_c_file,
+        path_in_repo="c.parquet",
+        repo_id=HF_REPO_ID,
+        repo_type="dataset",
+        commit_message=f"Auto-update channels: {len(merged_c):,} total"
+    )
+    print("[✓] c.parquet successfully uploaded!")
 
-        for meta, posts, discovered in results:
-            if meta:
-                channels_meta.append(meta)
-            if posts:
-                all_new_posts.extend(posts)
-            discovered_all.update(discovered)
+def sync_partitioned_posts():
+    """تقسيم ودمج المنشورات سنوياً مع التعامل مع التواريخ غير المحددة"""
+    print("\n[*] --- Processing Partitioned Posts ---")
+    new_p_path = os.path.join(CRAWLER_DIR, "p.parquet")
+    
+    # 1. فحص هل هناك بوستات جديدة من الكراولر
+    new_posts_df = pd.DataFrame()
+    if os.path.exists(new_p_path):
+        new_posts_df = pd.read_parquet(new_p_path)
+        print(f"[+] Loaded {len(new_posts_df):,} new posts from crawler.")
+    else:
+        print("[-] No new posts crawled this round.")
 
-    print(f"[+] Total posts scraped: {len(all_new_posts)}")
-    print(f"[+] Updated channels meta: {len(channels_meta)}")
-    print(f"[+] Discovered new channels: {len(discovered_all)}")
+    # 2. فحص إذا كان ملف p.parquet القديم الموحد موجوداً لنقله إلى النظام المقسم لأول مرة
+    legacy_old_p_df = pd.DataFrame()
+    try:
+        legacy_path = hf_hub_download(
+            repo_id=HF_REPO_ID,
+            filename="p.parquet",
+            repo_type="dataset",
+            token=HF_TOKEN
+        )
+        legacy_old_p_df = pd.read_parquet(legacy_path)
+        print(f"[!] Found legacy single p.parquet with {len(legacy_old_p_df):,} posts. Migrating to partitions...")
+    except Exception:
+        pass
 
-    # حفظ البوستات
-    if all_new_posts:
-        posts_df = pd.DataFrame(all_new_posts).drop_duplicates(subset=["id"], keep="last")
-        posts_out = os.path.join(OUTPUT_DIR, "p.parquet")
-        posts_df.to_parquet(posts_out, compression="zstd", index=False)
-        print(f"[+] Saved enriched posts to {posts_out}")
+    # تجميع كل الداتا الجديدة/المرحلة
+    combined_incoming = pd.concat([legacy_old_p_df, new_posts_df], ignore_index=True)
+    if combined_incoming.empty:
+        print("[-] Nothing to sync for posts.")
+        return
 
-    # حفظ القنوات المكتشفة والمحدثة
-    new_channels_records = [{"username": str(d), "title": str(d), "description": "", "subscribers": "0", "avatar": "", "verified": "False", "last_checked": ""} for d in discovered_all]
-    all_channels = channels_meta + new_channels_records
-    if all_channels:
-        ch_df = pd.DataFrame(all_channels).drop_duplicates(subset=["username"], keep="first")
-        ch_out = os.path.join(OUTPUT_DIR, "c.parquet")
-        ch_df.to_parquet(ch_out, compression="zstd", index=False)
-        print(f"[+] Saved enriched channels to {ch_out}")
+    # استخراج السنة وتصنيف البوستات
+    combined_incoming["year_partition"] = combined_incoming["date"].apply(extract_year_safely)
+    target_years = combined_incoming["year_partition"].unique()
+
+    manifest_data = {}
+
+    for year in target_years:
+        partition_filename = f"posts_{year}.parquet"
+        chunk_new = combined_incoming[combined_incoming["year_partition"] == year].drop(columns=["year_partition"])
+
+        # تنزيل الملف الخاص بهذه السنة إن وُجد مسبقاً في Hugging Face
+        existing_year_df = pd.DataFrame()
+        try:
+            year_path = hf_hub_download(
+                repo_id=HF_REPO_ID,
+                filename=partition_filename,
+                repo_type="dataset",
+                token=HF_TOKEN
+            )
+            existing_year_df = pd.read_parquet(year_path)
+        except Exception:
+            pass
+
+        # دمج واستبعاد التكرار
+        if not existing_year_df.empty:
+            merged_year = pd.concat([existing_year_df, chunk_new], ignore_index=True)
+        else:
+            merged_year = chunk_new
+
+        # إزالة التكرار مع الفرز التنازلي
+        if "id" in merged_year.columns:
+            merged_year = merged_year.drop_duplicates(subset=["id"], keep="last")
+        else:
+            merged_year = merged_year.drop_duplicates(subset=["username", "post_id"], keep="last")
+
+        if "date" in merged_year.columns:
+            merged_year = merged_year.sort_values(by="date", ascending=False)
+
+        # حفظ الملف محلياً
+        local_year_file = os.path.join(LOCAL_DIR, partition_filename)
+        merged_year.to_parquet(local_year_file, compression="zstd", index=False)
+        print(f"[+] Partition '{partition_filename}' prepared: {len(merged_year):,} posts.")
+
+        # رفع الملف للسحابة
+        api.upload_file(
+            path_or_fileobj=local_year_file,
+            path_in_repo=partition_filename,
+            repo_id=HF_REPO_ID,
+            repo_type="dataset",
+            commit_message=f"Sync partition {partition_filename}: {len(merged_year):,} posts"
+        )
+        manifest_data[year] = {
+            "file": partition_filename,
+            "total_rows": len(merged_year),
+            "updated_at": datetime.utcnow().isoformat()
+        }
+
+    # رفع ملف manifest.json لتسهيل القراءة على المتصفح
+    manifest_path = os.path.join(LOCAL_DIR, "manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=2)
+
+    api.upload_file(
+        path_or_fileobj=manifest_path,
+        path_in_repo="manifest.json",
+        repo_id=HF_REPO_ID,
+        repo_type="dataset",
+        commit_message="Update dataset partitions manifest"
+    )
+    print("[✓] Partitions and Manifest successfully synced to Hugging Face!")
+
+def main():
+    print("=" * 60)
+    print("🚀 Running Partitioned Pipeline Sync Engine")
+    print("=" * 60)
+    sync_channels()
+    sync_partitioned_posts()
+    print("=" * 60)
+    print("[✓] All sync tasks finished successfully!")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
