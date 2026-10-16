@@ -14,6 +14,34 @@ CRAWLER_DIR = "crawler_output"
 os.makedirs(LOCAL_DIR, exist_ok=True)
 api = HfApi(token=HF_TOKEN)
 
+def get_cloudflare_blacklist():
+    """جلب قائمة القنوات المحظورة مركزياً من Cloudflare KV لتطهيرها نهائياً"""
+    cf_token = os.getenv("CF_API_TOKEN")
+    cf_account = os.getenv("CF_ACCOUNT_ID")
+    cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
+
+    if not (cf_token and cf_account and cf_kv_id):
+        return set()
+
+    url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/blacklist"
+    headers = {
+        "Authorization": f"Bearer {cf_token}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        res = requests.get(url, headers=headers, timeout=15)
+        if res.status_code == 200:
+            bl_list = res.json()
+            if isinstance(bl_list, list):
+                blacklist_set = set(str(u).lower().strip() for u in bl_list if str(u).strip())
+                print(f"[*] Retrieved {len(blacklist_set)} blacklisted channels from Cloudflare KV for permanent purge.")
+                return blacklist_set
+    except Exception as e:
+        print(f"[-] Could not fetch blacklist from Cloudflare: {e}")
+
+    return set()
+
 def extract_year_safely(date_val):
     if pd.isna(date_val) or not str(date_val).strip():
         return "unknown"
@@ -30,12 +58,12 @@ def extract_year_safely(date_val):
         pass
     return "unknown"
 
-def sync_channels():
+def sync_channels(blacklist):
     new_c_path = os.path.join(CRAWLER_DIR, "c.parquet")
-    if not os.path.exists(new_c_path):
-        return 0, 0, 0
+    new_c_df = pd.DataFrame()
+    if os.path.exists(new_c_path):
+        new_c_df = pd.read_parquet(new_c_path)
 
-    new_c_df = pd.read_parquet(new_c_path)
     existing_c_df = pd.DataFrame()
     try:
         old_path = hf_hub_download(repo_id=HF_REPO_ID, filename="c.parquet", repo_type="dataset", token=HF_TOKEN)
@@ -44,7 +72,18 @@ def sync_channels():
         pass
 
     merged_c = pd.concat([existing_c_df, new_c_df], ignore_index=True)
+    if merged_c.empty:
+        return 0, 0, 0
+
     merged_c = merged_c.drop_duplicates(subset=["username"], keep="last")
+
+    # الحذف الفيزيائي الفعلي للقنوات المحظورة من قاعدة البيانات
+    if blacklist and "username" in merged_c.columns:
+        initial_c_count = len(merged_c)
+        merged_c = merged_c[~merged_c["username"].astype(str).str.lower().isin(blacklist)]
+        purged_c = initial_c_count - len(merged_c)
+        if purged_c > 0:
+            print(f"[🔥] Permanently purged {purged_c:,} channels from c.parquet!")
 
     out_c_file = os.path.join(LOCAL_DIR, "c.parquet")
     merged_c.to_parquet(out_c_file, compression="zstd", index=False)
@@ -54,7 +93,7 @@ def sync_channels():
         path_in_repo="c.parquet",
         repo_id=HF_REPO_ID,
         repo_type="dataset",
-        commit_message=f"Sync channels: {len(merged_c):,} total"
+        commit_message=f"Sync & purge channels: {len(merged_c):,} total"
     )
 
     total = len(merged_c)
@@ -76,7 +115,6 @@ def push_to_cloudflare_kv(posts_df):
     if "date" in posts_df.columns:
         posts_df = posts_df.sort_values(by="date", ascending=False)
 
-    # اختيار الحقول الأساسية لتقليل حجم الـ JSON المرفوع
     cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
     available_cols = [c for c in cols_to_keep if c in posts_df.columns]
     
@@ -94,14 +132,11 @@ def push_to_cloudflare_kv(posts_df):
     else:
         print(f"[-] Cloudflare KV sync failed: {res.text}")
 
-def sync_partitioned_posts():
+def sync_partitioned_posts(blacklist):
     new_p_path = os.path.join(CRAWLER_DIR, "p.parquet")
-    if not os.path.exists(new_p_path):
-        return 0, 0
-
-    new_posts_df = pd.read_parquet(new_p_path)
-    new_posts_df["year_partition"] = new_posts_df["date"].apply(extract_year_safely)
-    target_years = new_posts_df["year_partition"].unique()
+    new_posts_df = pd.DataFrame()
+    if os.path.exists(new_p_path):
+        new_posts_df = pd.read_parquet(new_p_path)
 
     manifest_data = {}
     try:
@@ -109,15 +144,21 @@ def sync_partitioned_posts():
         with open(m_path, "r", encoding="utf-8") as f:
             manifest_data = json.load(f)
     except Exception:
-        pass
+        manifest_data = {"2026": {"file": "posts_2026.parquet"}}
+
+    # دمج السنوات الجديدة إن وجدت
+    if not new_posts_df.empty:
+        new_posts_df["year_partition"] = new_posts_df["date"].apply(extract_year_safely)
+        for y in new_posts_df["year_partition"].unique():
+            if y not in manifest_data:
+                manifest_data[y] = {"file": f"posts_{y}.parquet"}
 
     all_2026_df = pd.DataFrame()
     total_posts_all_years = 0
 
-    for year in target_years:
-        partition_filename = f"posts_{year}.parquet"
-        chunk_new = new_posts_df[new_posts_df["year_partition"] == year].drop(columns=["year_partition"])
-
+    # مراجعة وتطهير ملفات كل السنوات
+    for year, meta in manifest_data.items():
+        partition_filename = meta.get("file", f"posts_{year}.parquet")
         existing_year_df = pd.DataFrame()
         try:
             year_path = hf_hub_download(repo_id=HF_REPO_ID, filename=partition_filename, repo_type="dataset", token=HF_TOKEN)
@@ -125,11 +166,27 @@ def sync_partitioned_posts():
         except Exception:
             pass
 
+        # دمج الجديد التابع لهذه السنة
+        chunk_new = pd.DataFrame()
+        if not new_posts_df.empty and "year_partition" in new_posts_df.columns:
+            chunk_new = new_posts_df[new_posts_df["year_partition"] == year].drop(columns=["year_partition"], errors="ignore")
+
         merged_year = pd.concat([existing_year_df, chunk_new], ignore_index=True)
+        if merged_year.empty:
+            continue
+
         if "id" in merged_year.columns:
             merged_year = merged_year.drop_duplicates(subset=["id"], keep="last")
         else:
             merged_year = merged_year.drop_duplicates(subset=["username", "post_id"], keep="last")
+
+        # الحذف الفيزيائي الفعلي لبوستات القنوات المحظورة من ملفات Parquet
+        if blacklist and "username" in merged_year.columns:
+            initial_p_count = len(merged_year)
+            merged_year = merged_year[~merged_year["username"].astype(str).str.lower().isin(blacklist)]
+            purged_p = initial_p_count - len(merged_year)
+            if purged_p > 0:
+                print(f"[🔥] Permanently purged {purged_p:,} posts from {partition_filename}!")
 
         if year == "2026":
             all_2026_df = merged_year
@@ -142,7 +199,7 @@ def sync_partitioned_posts():
             path_in_repo=partition_filename,
             repo_id=HF_REPO_ID,
             repo_type="dataset",
-            commit_message=f"Sync partition {partition_filename}: {len(merged_year):,} posts"
+            commit_message=f"Sync & clean partition {partition_filename}: {len(merged_year):,} posts"
         )
 
         manifest_data[year] = {
@@ -163,7 +220,6 @@ def sync_partitioned_posts():
         commit_message="Update dataset partitions manifest"
     )
 
-    # دفع أحدث المنشورات لـ Cloudflare KV
     if not all_2026_df.empty:
         push_to_cloudflare_kv(all_2026_df)
 
@@ -173,8 +229,16 @@ def sync_partitioned_posts():
     return len(new_posts_df), total_posts_all_years
 
 def main():
-    c_crawled, c_total, c_remaining = sync_channels()
-    p_crawled, p_total = sync_partitioned_posts()
+    print("\n" + "=" * 65)
+    print("🚀 بدء مزامنة ورفع وتطهير البيانات السحابية...")
+    print("=" * 65)
+
+    # 1. جلب قائمة الحظر من Cloudflare KV
+    blacklist = get_cloudflare_blacklist()
+
+    # 2. مزامنة القنوات والبوستات مع التطهير الفعلي
+    c_crawled, c_total, c_remaining = sync_channels(blacklist)
+    p_crawled, p_total = sync_partitioned_posts(blacklist)
 
     c_checked = c_total - c_remaining
     progress_pct = (c_checked / c_total * 100) if c_total > 0 else 0
