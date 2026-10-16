@@ -25,13 +25,14 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas pyarrow huggingface_hub aiohttp
+          pip install pandas pyarrow huggingface_hub aiohttp beautifulsoup4
 
       - name: Run Telegram Crawler
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
         run: |
           mkdir -p crawler_output
-          # هنا تضع أمر تشغيل الكراولر الخاص بك
-          # على أن يحفظ مخرجاته في crawler_output/p.parquet و crawler_output/c.parquet
           python run_crawler.py
 
       - name: Sync and Upload to Hugging Face
