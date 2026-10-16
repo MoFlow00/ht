@@ -43,5 +43,3 @@ jobs:
         run: |
           python update_pipeline.py
           HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
-        run: |
-          python update_pipeline.py
