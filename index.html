@@ -3,19 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>مستكشف تيليجرام السحابي</title>
+    <title>خلاصة تيليجرام</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-wasm.js"></script>
     <style>
         :root {
-            --bg-page: #0b1120;
-            --bg-card: #1e293b;
-            --bg-input: #020617;
-            --border: #334155;
-            --primary: #38bdf8;
-            --text-main: #f8fafc;
-            --text-sub: #94a3b8;
+            --bg-page: #f0f2f5;
+            --bg-card: #ffffff;
+            --border: #e2e8f0;
+            --primary: #0088cc;
+            --text-main: #0f172a;
+            --text-sub: #64748b;
+            --danger: #ef4444;
+            --danger-bg: #fee2e2;
         }
 
         * {
@@ -37,44 +37,25 @@
             position: sticky;
             top: 0;
             z-index: 1000;
-            background: rgba(15, 23, 42, 0.95);
+            background: rgba(255, 255, 255, 0.96);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid var(--border);
             padding: 10px 14px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
         }
 
         .header-box {
-            max-width: 620px;
+            max-width: 600px;
             margin: 0 auto;
             display: flex;
             flex-direction: column;
             gap: 8px;
         }
 
-        .header-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
         .brand {
-            font-size: 1.05rem;
+            font-size: 1.1rem;
             font-weight: 700;
             color: var(--primary);
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .year-dropdown {
-            background: var(--bg-input);
-            color: var(--text-main);
-            border: 1px solid var(--border);
-            padding: 5px 10px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            outline: none;
-            cursor: pointer;
         }
 
         .search-row {
@@ -84,10 +65,10 @@
 
         .search-row input {
             flex: 1;
-            background: var(--bg-input);
+            background: #f8fafc;
             border: 1px solid var(--border);
             color: var(--text-main);
-            padding: 8px 12px;
+            padding: 8px 14px;
             border-radius: 8px;
             font-size: 0.9rem;
             outline: none;
@@ -99,17 +80,16 @@
 
         .search-row button {
             background: var(--primary);
-            color: #0b1120;
+            color: #ffffff;
             border: none;
-            padding: 0 16px;
+            padding: 0 18px;
             border-radius: 8px;
             font-weight: 700;
-            font-size: 0.9rem;
             cursor: pointer;
         }
 
         .feed-container {
-            max-width: 620px;
+            max-width: 600px;
             margin: 12px auto;
             padding: 0 10px;
             display: flex;
@@ -124,50 +104,79 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            transition: opacity 0.3s ease, transform 0.3s ease;
         }
 
         .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 12px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            padding: 10px 14px;
+            border-bottom: 1px solid #f1f5f9;
         }
 
         .channel-info {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
 
         .channel-avatar {
-            width: 32px;
-            height: 32px;
+            width: 36px;
+            height: 36px;
             border-radius: 50%;
-            background: var(--primary);
-            color: #0b1120;
+            background: #e0f2fe;
+            color: var(--primary);
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
-            font-size: 0.9rem;
+            font-size: 0.95rem;
+        }
+
+        .author-text {
+            display: flex;
+            flex-direction: column;
         }
 
         .channel-name {
             color: var(--text-main);
             text-decoration: none;
-            font-weight: 600;
-            font-size: 0.9rem;
-        }
-
-        .channel-name:hover {
-            color: var(--primary);
+            font-weight: 700;
+            font-size: 0.95rem;
         }
 
         .post-time {
             color: var(--text-sub);
             font-size: 0.75rem;
             direction: ltr;
+            text-align: right;
+        }
+
+        .btn-trash {
+            background: transparent;
+            border: none;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-sub);
+            transition: all 0.2s;
+        }
+
+        .btn-trash:hover {
+            background: var(--danger-bg);
+            color: var(--danger);
+        }
+
+        .btn-trash svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
         }
 
         .media-container {
@@ -180,7 +189,7 @@
 
         .media-container img {
             width: 100%;
-            max-height: 450px;
+            max-height: 480px;
             object-fit: contain;
             display: block;
         }
@@ -193,11 +202,12 @@
         }
 
         .card-body {
-            padding: 12px;
+            padding: 14px;
             font-size: 0.95rem;
             line-height: 1.6;
             word-break: break-word;
             white-space: pre-wrap;
+            color: #1e293b;
         }
 
         .card-body a {
@@ -209,9 +219,10 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 8px 12px;
-            background: rgba(0, 0, 0, 0.25);
-            font-size: 0.8rem;
+            padding: 10px 14px;
+            background: #f8fafc;
+            border-top: 1px solid #f1f5f9;
+            font-size: 0.82rem;
             color: var(--text-sub);
         }
 
@@ -226,7 +237,6 @@
             padding: 24px 10px;
             color: var(--text-sub);
             font-size: 0.9rem;
-            word-wrap: break-word;
         }
 
         .spinner {
@@ -249,15 +259,10 @@
 
     <header>
         <div class="header-box">
-            <div class="header-top">
-                <div class="brand">⚡ تليجرام كلاود</div>
-                <select id="yearSelect" class="year-dropdown" onchange="window.switchYear(this.value)">
-                    <option value="2026">2026</option>
-                </select>
-            </div>
+            <div class="brand">⚡ تليجرام فيد (Edge API)</div>
             <div class="search-row">
-                <input type="text" id="searchInput" placeholder="ابحث في نصوص المنشورات..." onkeypress="if(event.key === 'Enter') window.triggerSearch()">
-                <button onclick="window.triggerSearch()">بحث</button>
+                <input type="text" id="searchInput" placeholder="ابحث في المنشورات..." onkeypress="if(event.key === 'Enter') triggerSearch()">
+                <button onclick="triggerSearch()">بحث</button>
             </div>
         </div>
     </header>
@@ -266,107 +271,17 @@
 
     <div class="status-box" id="statusBox">
         <div class="spinner"></div>
-        جارٍ تهيئة محرك البيانات...
+        جلب المنشورات...
     </div>
 
-    <script type="module">
-        import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
+    <script>
+        // رابط الـ Worker الخاص بك
+        const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
 
-        const REPO_ID = "Moo408/dat-9f82c4";
-        const HF_BASE = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/`;
-
-        let db = null;
-        let conn = null;
-        let selectedYear = "2026";
-        let offset = 0;
-        const LIMIT = 20;
+        let currentPage = 1;
         let isFetching = false;
         let hasMore = true;
-        let activeSearch = "";
-        let currentTableName = "";
-
-        async function init() {
-            try {
-                const MANUAL_BUNDLES = {
-                    mvp: {
-                        mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-mvp.wasm',
-                        mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-mvp.worker.js',
-                    },
-                    eh: {
-                        mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-eh.wasm',
-                        mainWorker: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-browser-eh.worker.js',
-                    },
-                };
-
-                const bundle = await duckdb.selectBundle(MANUAL_BUNDLES);
-                const workerReq = await fetch(bundle.mainWorker);
-                const workerText = await workerReq.text();
-                const workerBlob = new Blob([workerText], { type: 'text/javascript' });
-                const workerUrl = URL.createObjectURL(workerBlob);
-                
-                const worker = new Worker(workerUrl);
-
-                db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(), worker);
-                await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
-                URL.revokeObjectURL(workerUrl);
-
-                conn = await db.connect();
-
-                try {
-                    await conn.query("INSTALL httpfs; LOAD httpfs;");
-                } catch (e) {
-                    console.log("httpfs built-in loaded");
-                }
-
-                await loadManifest();
-                await setupPartition(selectedYear);
-                await fetchFeed(true);
-            } catch (err) {
-                console.error("DuckDB Init Error:", err);
-                setStatus(`فشل التهيئة الأولي:<br><span style="color:#f87171;font-size:0.8rem">${err.message || err}</span>`, false);
-            }
-        }
-
-        async function loadManifest() {
-            try {
-                const res = await fetch(`${HF_BASE}manifest.json?v=${Date.now()}`);
-                if (!res.ok) return;
-                const manifest = await res.json();
-                const select = document.getElementById("yearSelect");
-                select.innerHTML = "";
-
-                const years = Object.keys(manifest).sort((a, b) => b.localeCompare(a));
-                years.forEach(y => {
-                    const opt = document.createElement("option");
-                    opt.value = y;
-                    const rows = Number(manifest[y].total_rows || 0).toLocaleString();
-                    opt.textContent = y === "unknown" ? `غير مؤرخ (${rows})` : `${y} (${rows})`;
-                    select.appendChild(opt);
-                });
-
-                if (years.includes("2026")) {
-                    selectedYear = "2026";
-                    select.value = "2026";
-                } else if (years.length > 0) {
-                    selectedYear = years[0];
-                    select.value = years[0];
-                }
-            } catch (e) {
-                console.warn("Manifest loading skipped:", e);
-            }
-        }
-
-        async function setupPartition(year) {
-            const fileName = `posts_${year}.parquet`;
-            const fileUrl = `${HF_BASE}${fileName}`;
-            try {
-                await db.registerFileURL(fileName, fileUrl, duckdb.DuckDBDataProtocol.HTTP, false);
-                currentTableName = fileName;
-            } catch (e) {
-                console.error("Registration error:", e);
-                throw e;
-            }
-        }
+        let activeQuery = "";
 
         async function fetchFeed(isReset = false) {
             if (isFetching || (!hasMore && !isReset)) return;
@@ -374,57 +289,34 @@
 
             const statusEl = document.getElementById("statusBox");
             statusEl.style.display = "block";
-            statusEl.innerHTML = '<div class="spinner"></div> جلب البيانات من السحابة...';
 
             if (isReset) {
-                offset = 0;
+                currentPage = 1;
                 hasMore = true;
                 document.getElementById("feed").innerHTML = "";
             }
 
-            // تم حذف ORDER BY لمنع تحميل الملف كله بالكامل وسحب أول أجزاء فقط
-            let sql = "";
-            if (activeSearch.trim()) {
-                const cleanText = activeSearch.replace(/'/g, "''");
-                sql = `
-                    SELECT username, post_id, text, image, video, media_type, views, date 
-                    FROM '${currentTableName}' 
-                    WHERE text ILIKE '%${cleanText}%' 
-                    LIMIT ${LIMIT} OFFSET ${offset};
-                `;
-            } else {
-                sql = `
-                    SELECT username, post_id, text, image, video, media_type, views, date 
-                    FROM '${currentTableName}' 
-                    LIMIT ${LIMIT} OFFSET ${offset};
-                `;
-            }
-
             try {
-                const result = await conn.query(sql);
-                const posts = result.toArray().map(row => row.toJSON());
+                const url = `${API_BASE}/api/feed?page=${currentPage}&q=${encodeURIComponent(activeQuery)}`;
+                const res = await fetch(url);
+                const data = await res.json();
 
-                if (posts.length < LIMIT) {
-                    hasMore = false;
+                if (data.posts && data.posts.length > 0) {
+                    renderPosts(data.posts);
+                    currentPage++;
+                    hasMore = data.has_more;
+                } else if (isReset) {
+                    document.getElementById("feed").innerHTML = '<div class="status-box">لا توجد منشورات حالياً في السيرفر. شغل الـ Action لضخ البيانات.</div>';
                 }
-
-                if (posts.length === 0 && isReset) {
-                    setStatus("لا توجد منشورات متطابقة مع البحث.", false);
-                    isFetching = false;
-                    return;
-                }
-
-                renderPosts(posts);
-                offset += posts.length;
 
                 if (!hasMore) {
-                    setStatus("تم الوصول لنهاية هذا الأرشيف.", false);
+                    statusEl.innerText = "وصلت لنهاية الخلاصة";
                 } else {
                     statusEl.style.display = "none";
                 }
             } catch (err) {
-                console.error("DuckDB Query Error:", err);
-                setStatus(`خطأ في جلب البيانات:<br><span style="color:#f87171;font-size:0.8rem">${err.message || err}</span>`, false);
+                console.error("Fetch error:", err);
+                statusEl.innerText = "تعذر الاتصال بالسيرفر. يرجى المحاولة لاحقاً.";
             } finally {
                 isFetching = false;
             }
@@ -436,6 +328,7 @@
             posts.forEach(p => {
                 const card = document.createElement("article");
                 card.className = "card";
+                card.setAttribute("data-username", p.username.toLowerCase());
 
                 let mediaHtml = "";
                 const isVideo = p.media_type === "video" || (p.video && p.video.trim() !== "");
@@ -461,9 +354,16 @@
                     <div class="card-header">
                         <div class="channel-info">
                             <div class="channel-avatar">${(p.username || "T")[0].toUpperCase()}</div>
-                            <a href="https://t.me/${p.username}" target="_blank" class="channel-name">@${p.username}</a>
+                            <div class="author-text">
+                                <a href="https://t.me/${p.username}" target="_blank" class="channel-name">@${p.username}</a>
+                                <span class="post-time">${postTime}</span>
+                            </div>
                         </div>
-                        <span class="post-time">${postTime}</span>
+                        <button class="btn-trash" title="حذف القناة للأبد" onclick="purgeChannel('${p.username}')">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                            </svg>
+                        </button>
                     </div>
                     ${mediaHtml}
                     <div class="card-body">${formatBody(p.text || "")}</div>
@@ -481,32 +381,35 @@
             return str.replace(/(https?:\/\/[^\s]+)/g, url => `<a href="${url}" target="_blank">${url}</a>`);
         }
 
-        function setStatus(msg, showLoader = true) {
-            const statusEl = document.getElementById("statusBox");
-            statusEl.style.display = "block";
-            statusEl.innerHTML = showLoader ? `<div class="spinner"></div> ${msg}` : msg;
+        // حذف القناة في السيرفر فوراً
+        async function purgeChannel(username) {
+            const cards = document.querySelectorAll(`[data-username="${username.toLowerCase()}"]`);
+            cards.forEach(c => {
+                c.style.transform = 'scale(0.95)';
+                c.style.opacity = '0';
+            });
+            setTimeout(() => cards.forEach(c => c.remove()), 300);
+
+            try {
+                await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(username)}`, { method: "POST" });
+                console.log(`[✓] Purged @${username} globally.`);
+            } catch (e) {
+                console.error("Purge error:", e);
+            }
         }
 
-        window.switchYear = async function(year) {
-            selectedYear = year;
-            await setupPartition(year);
-            await fetchFeed(true);
-        };
-
-        window.triggerSearch = function() {
-            activeSearch = document.getElementById("searchInput").value;
+        function triggerSearch() {
+            activeQuery = document.getElementById("searchInput").value;
             fetchFeed(true);
-        };
+        }
 
         window.addEventListener("scroll", () => {
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
-                if (!isFetching && hasMore) {
-                    fetchFeed(false);
-                }
+                if (!isFetching && hasMore) fetchFeed(false);
             }
         });
 
-        window.addEventListener("DOMContentLoaded", init);
+        window.addEventListener("DOMContentLoaded", () => fetchFeed(true));
     </script>
 </body>
 </html>
