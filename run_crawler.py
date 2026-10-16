@@ -2,22 +2,25 @@ import os
 import re
 import asyncio
 import aiohttp
+import random
 from bs4 import BeautifulSoup
 import pandas as pd
 from datetime import datetime, timezone
 from huggingface_hub import hf_hub_download
 
-# ==================== إعدادات الكراولر ====================
-CHANNELS_TO_SCRAPE_PER_RUN = 2500   # عدد القنوات التي يتم فحصها بكل دورة
-CONCURRENT_REQUESTS = 15           # سرعة التوازي
+# ==================== الإعدادات ====================
+CHANNELS_TO_SCRAPE_PER_RUN = 1500  # فحص 1,500 قناة في كل جولة
+CONCURRENT_REQUESTS = 12          # سرعة توازي متزنة وآمنة
 OUTPUT_DIR = "crawler_output"
-# ==========================================================
+# ===================================================
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-}
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+]
 
 def extract_channel_meta(soup, username):
     title = username
@@ -106,8 +109,6 @@ def extract_post_data(msg, username):
         elif images:
             media_type = "image"
 
-        primary_image = images[0] if images else ""
-
         views = "0"
         views_el = msg.select_one(".tgme_widget_message_views")
         if views_el:
@@ -137,8 +138,8 @@ def extract_post_data(msg, username):
             "username": str(username).lower(),
             "post_id": str(post_id),
             "text": str(text),
-            "image": str(primary_image),
-            "all_images": ",".join(images) if len(images) > 1 else str(primary_image),
+            "image": str(images[0] if images else ""),
+            "all_images": ",".join(images) if len(images) > 1 else str(images[0] if images else ""),
             "video": str(video_url),
             "media_type": str(media_type),
             "views": str(views),
@@ -153,8 +154,11 @@ async def fetch_channel(session, semaphore, username):
     url = f"https://t.me/s/{username}"
     now_iso = datetime.now(timezone.utc).isoformat()
     async with semaphore:
+        # تأخير عشوائي خفيف لتفادي الـ Rate Limit
+        await asyncio.sleep(random.uniform(0.1, 0.4))
         try:
-            async with session.get(url, headers=headers, timeout=12) as resp:
+            req_headers = {"User-Agent": random.choice(USER_AGENTS)}
+            async with session.get(url, headers=req_headers, timeout=14) as resp:
                 if resp.status == 200:
                     html = await resp.text()
                     soup = BeautifulSoup(html, "html.parser")
@@ -174,7 +178,6 @@ async def fetch_channel(session, semaphore, username):
         except Exception:
             pass
 
-    # في حال فشل الفتح أو القناة ميتة، نحددها كمفحوصة لمنع تكرارها
     dead_meta = {
         "username": str(username).lower(),
         "title": str(username),
@@ -187,14 +190,14 @@ async def fetch_channel(session, semaphore, username):
     return dead_meta, [], set()
 
 async def main():
-    print("[*] Starting Smart Queue Telegram Cloud Scraper...")
+    print("[*] Starting High-Speed Queue Telegram Cloud Scraper...")
 
     HF_TOKEN = os.getenv("HF_TOKEN")
-    HF_REPO_ID = os.getenv("HF_REPO_ID")
+    HF_REPO_ID = os.getenv("HF_REPO_ID", "Moo408/dat-9f82c4")
     target_usernames = []
 
     try:
-        print("[*] Fetching channel queue from Hugging Face...")
+        print("[*] Downloading channels queue from Hugging Face...")
         c_path = hf_hub_download(
             repo_id=HF_REPO_ID,
             filename="c.parquet",
@@ -203,27 +206,26 @@ async def main():
         )
         c_df = pd.read_parquet(c_path)
         
-        # تصفية القنوات التي لم تفحص نهائياً (last_checked فارغ)
+        # اختيار القنوات غير المفحوصة بدقة
         if "last_checked" in c_df.columns:
             uninspected = c_df[c_df["last_checked"].isna() | (c_df["last_checked"].astype(str).str.strip() == "")]
         else:
             uninspected = c_df
 
         remaining_count = len(uninspected)
-        print(f"[*] Channels waiting in queue: {remaining_count:,}")
+        print(f"[*] Channels currently waiting in queue: {remaining_count:,}")
 
         if remaining_count > 0:
-            # أخذ أول 500 قناة من طابور الانتظار بنظام منظم وليس عشوائياً
             target_usernames = uninspected["username"].dropna().head(CHANNELS_TO_SCRAPE_PER_RUN).tolist()
-            print(f"[+] Loaded next {len(target_usernames)} target channels from queue!")
+            print(f"[+] Loaded {len(target_usernames)} target channels for this run!")
         else:
-            print("[!] Queue is completely empty! All channels have been inspected.")
+            print("[!] All channels have been inspected!")
 
     except Exception as e:
         print(f"[-] Could not load channels queue: {e}")
 
     if not target_usernames:
-        print("[-] No channels to process this run.")
+        print("[-] Queue is empty. Exiting.")
         return
 
     semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS)
@@ -231,7 +233,7 @@ async def main():
     discovered_all = set()
     channels_meta = []
 
-    conn = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS)
+    conn = aiohttp.TCPConnector(limit=CONCURRENT_REQUESTS, ttl_dns_cache=300)
     async with aiohttp.ClientSession(connector=conn) as session:
         tasks = [fetch_channel(session, semaphore, u) for u in target_usernames]
         results = await asyncio.gather(*tasks)
@@ -247,14 +249,12 @@ async def main():
     print(f"[+] Inspected channels recorded: {len(channels_meta)}")
     print(f"[+] Discovered new channels: {len(discovered_all)}")
 
-    # حفظ المنشورات الجديدة
     if all_new_posts:
         posts_df = pd.DataFrame(all_new_posts).drop_duplicates(subset=["id"], keep="last")
         posts_out = os.path.join(OUTPUT_DIR, "p.parquet")
         posts_df.to_parquet(posts_out, compression="zstd", index=False)
-        print(f"[+] Saved enriched posts to {posts_out}")
+        print(f"[+] Saved scraped posts to {posts_out}")
 
-    # حفظ حالة القنوات المفحوصة والقنوات المكتشفة دائماً
     new_channels_records = [{"username": str(d), "title": str(d), "description": "", "subscribers": "0", "avatar": "", "verified": "False", "last_checked": ""} for d in discovered_all]
     all_channels = channels_meta + new_channels_records
     if all_channels:
