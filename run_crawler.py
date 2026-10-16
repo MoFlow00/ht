@@ -5,10 +5,11 @@ import aiohttp
 from bs4 import BeautifulSoup
 import pandas as pd
 from datetime import datetime
+from huggingface_hub import hf_hub_download
 
 # ==================== إعدادات الكراولر ====================
-CHANNELS_TO_SCRAPE_PER_RUN = 500   # عدد القنوات التي يتم فحصها بكل دورة في GitHub Actions
-CONCURRENT_REQUESTS = 10           # سرعة التوازي لتفادي تقييد التيليجرام
+CHANNELS_TO_SCRAPE_PER_RUN = 500   # عدد القنوات التي يتم فحصها بكل دورة
+CONCURRENT_REQUESTS = 10           # سرعة التوازي
 OUTPUT_DIR = "crawler_output"
 # ==========================================================
 
@@ -22,7 +23,6 @@ def extract_post_data(soup, username):
     posts_data = []
     discovered_channels = set()
     
-    # استخراج عنوان القناة
     channel_title = ""
     title_tag = soup.select_one(".tgme_channel_info_header_title span")
     if title_tag:
@@ -31,7 +31,6 @@ def extract_post_data(soup, username):
     messages = soup.select(".tgme_widget_message_wrap")
     for msg in messages:
         try:
-            # استخراج معرف البوست
             post_div = msg.select_one(".tgme_widget_message")
             if not post_div:
                 continue
@@ -40,17 +39,14 @@ def extract_post_data(soup, username):
                 continue
             post_id = data_post.split("/")[-1]
 
-            # استخراج النص
             text_el = msg.select_one(".tgme_widget_message_text")
             text = text_el.get_text(separator="\n", strip=True) if text_el else ""
 
-            # اكتشاف قنوات جديدة من المنشورات (@channel)
             if text:
                 mentions = re.findall(r"@([a-zA-Z0-9_]{4,32})", text)
                 for m in mentions:
                     discovered_channels.add(m.lower())
 
-            # استخراج الميديا
             image_url = ""
             video_url = ""
             media_type = "text"
@@ -68,7 +64,6 @@ def extract_post_data(soup, username):
                 video_url = video_el.get("src", "")
                 media_type = "video"
 
-            # عدد المشاهدات
             views = "0"
             views_el = msg.select_one(".tgme_widget_message_views")
             if views_el:
@@ -80,7 +75,6 @@ def extract_post_data(soup, username):
                 else:
                     views = re.sub(r"[^\d]", "", v_text) or "0"
 
-            # التاريخ
             date_str = ""
             time_el = msg.select_one("time")
             if time_el and time_el.get("datetime"):
@@ -105,32 +99,40 @@ async def fetch_channel(session, semaphore, username):
     url = f"https://t.me/s/{username}"
     async with semaphore:
         try:
-            async with session.get(url, headers=headers, timeout=15) as resp:
+            async with session.get(url, headers=headers, timeout=12) as resp:
                 if resp.status == 200:
                     html = await resp.text()
                     soup = BeautifulSoup(html, "html.parser")
                     return extract_post_data(soup, username)
-        except Exception as e:
-            print(f"[-] Failed to scrape @{username}: {e}")
+        except Exception:
+            pass
     return None, [], set()
 
 async def main():
     print("[*] Telegram Cloud Scraper started...")
 
-    # جلب عينة من القنوات الموجودة
+    HF_TOKEN = os.getenv("HF_TOKEN")
+    HF_REPO_ID = os.getenv("HF_REPO_ID")
     target_usernames = []
-    source_c_path = os.path.join("parquet_data", "c.parquet")
-    
-    if os.path.exists(source_c_path):
-        c_df = pd.read_parquet(source_c_path)
+
+    # تنزيل ملف القنوات من السحابة لسحب 500 قناة عشوائية حقيقية
+    try:
+        print("[*] Fetching channel list from Hugging Face...")
+        c_path = hf_hub_download(
+            repo_id=HF_REPO_ID,
+            filename="c.parquet",
+            repo_type="dataset",
+            token=HF_TOKEN
+        )
+        c_df = pd.read_parquet(c_path, columns=["username"])
         if "username" in c_df.columns:
             target_usernames = c_df["username"].dropna().sample(min(CHANNELS_TO_SCRAPE_PER_RUN, len(c_df))).tolist()
+            print(f"[+] Successfully loaded {len(target_usernames)} target channels from HF!")
+    except Exception as e:
+        print(f"[-] Could not load channels from HF: {e}")
 
     if not target_usernames:
-        # قنوات افتراضية في حال عدم وجود ملف محلي
         target_usernames = ["telegram", "durov", "tginfo", "techcrunch", "pythonres"]
-
-    print(f"[*] Crawling target list: {len(target_usernames)} channels...")
 
     semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS)
     all_new_posts = []
@@ -154,24 +156,21 @@ async def main():
             discovered_all.update(discovered)
 
     print(f"[+] Total new posts scraped: {len(all_new_posts)}")
-    print(f"[+] Discovered new potential channels: {len(discovered_all)}")
+    print(f"[+] Discovered new channels: {len(discovered_all)}")
 
-    # حفظ المنشورات الجديدة بصيغة Parquet
     if all_new_posts:
         posts_df = pd.DataFrame(all_new_posts)
-        # إنشاء عمود ID ترتيبي مؤقت للبوستات الجديدة
         posts_df["id"] = [str(int(datetime.utcnow().timestamp()) + i) for i in range(len(posts_df))]
         posts_out = os.path.join(OUTPUT_DIR, "p.parquet")
         posts_df.to_parquet(posts_out, compression="zstd", index=False)
         print(f"[+] Saved scraped posts to {posts_out}")
 
-    # حفظ القنوات المحدثة والمكتشفة بصيغة Parquet
     c_records = channels_meta + [{"username": str(d), "title": str(d), "last_checked": ""} for d in discovered_all]
     if c_records:
         ch_df = pd.DataFrame(c_records).drop_duplicates(subset=["username"])
         ch_out = os.path.join(OUTPUT_DIR, "c.parquet")
         ch_df.to_parquet(ch_out, compression="zstd", index=False)
-        print(f"[+] Saved updated/discovered channels to {ch_out}")
+        print(f"[+] Saved channels to {ch_out}")
 
 if __name__ == "__main__":
     asyncio.run(main())
