@@ -2,16 +2,16 @@
 <html lang="ar" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مستكشف تيليجرام</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>مستكشف تيليجرام السحابي</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-wasm.js"></script>
     <style>
         :root {
-            --bg-page: #0f172a;
+            --bg-page: #0b1120;
             --bg-card: #1e293b;
-            --bg-input: #0b1120;
+            --bg-input: #020617;
             --border: #334155;
             --primary: #38bdf8;
             --text-main: #f8fafc;
@@ -23,42 +23,43 @@
             margin: 0;
             padding: 0;
             font-family: 'Cairo', sans-serif;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
             background-color: var(--bg-page);
             color: var(--text-main);
             min-height: 100vh;
-            padding-bottom: 50px;
+            padding-bottom: 60px;
         }
 
-        /* شريط علوي متناسق ومستقر */
+        /* شريط التحكم العلوي */
         header {
             position: sticky;
             top: 0;
             z-index: 1000;
-            background: rgba(30, 41, 59, 0.95);
-            backdrop-filter: blur(8px);
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(10px);
             border-bottom: 1px solid var(--border);
-            padding: 12px 16px;
+            padding: 10px 14px;
         }
 
-        .header-content {
-            max-width: 680px;
+        .header-box {
+            max-width: 620px;
             margin: 0 auto;
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
         }
 
-        .header-row {
+        .header-top {
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
 
-        .logo {
-            font-size: 1.1rem;
+        .brand {
+            font-size: 1.05rem;
             font-weight: 700;
             color: var(--primary);
             display: flex;
@@ -66,54 +67,53 @@
             gap: 6px;
         }
 
-        .year-select {
+        .year-dropdown {
             background: var(--bg-input);
             color: var(--text-main);
             border: 1px solid var(--border);
-            padding: 6px 12px;
+            padding: 5px 10px;
             border-radius: 8px;
             font-size: 0.85rem;
             outline: none;
             cursor: pointer;
         }
 
-        .search-bar {
+        .search-row {
             display: flex;
             gap: 8px;
         }
 
-        .search-bar input {
+        .search-row input {
             flex: 1;
             background: var(--bg-input);
             border: 1px solid var(--border);
             color: var(--text-main);
-            padding: 9px 14px;
+            padding: 8px 12px;
             border-radius: 8px;
             font-size: 0.9rem;
             outline: none;
-            transition: border-color 0.2s;
         }
 
-        .search-bar input:focus {
+        .search-row input:focus {
             border-color: var(--primary);
         }
 
-        .search-bar button {
+        .search-row button {
             background: var(--primary);
-            color: #0f172a;
+            color: #0b1120;
             border: none;
-            padding: 0 18px;
+            padding: 0 16px;
             border-radius: 8px;
             font-weight: 700;
             font-size: 0.9rem;
             cursor: pointer;
         }
 
-        /* الحاوية وبطاقات المنشورات */
-        .container {
-            max-width: 680px;
-            margin: 16px auto;
-            padding: 0 12px;
+        /* حاوية البطاقات */
+        .feed-container {
+            max-width: 620px;
+            margin: 12px auto;
+            padding: 0 10px;
             display: flex;
             flex-direction: column;
             gap: 14px;
@@ -132,47 +132,47 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px;
+            padding: 10px 12px;
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
         .channel-info {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
         }
 
         .channel-avatar {
-            width: 36px;
-            height: 36px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
             background: var(--primary);
-            color: #0f172a;
+            color: #0b1120;
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
         }
 
         .channel-name {
             color: var(--text-main);
             text-decoration: none;
             font-weight: 600;
-            font-size: 0.95rem;
+            font-size: 0.9rem;
         }
 
         .channel-name:hover {
             color: var(--primary);
         }
 
-        .post-date {
+        .post-time {
             color: var(--text-sub);
             font-size: 0.75rem;
             direction: ltr;
         }
 
-        .media-wrapper {
+        .media-container {
             width: 100%;
             background: #000;
             display: flex;
@@ -180,22 +180,22 @@
             align-items: center;
         }
 
-        .media-wrapper img {
+        .media-container img {
             width: 100%;
-            max-height: 480px;
+            max-height: 450px;
             object-fit: contain;
             display: block;
         }
 
-        .media-wrapper iframe {
+        .media-container iframe {
             width: 100%;
-            min-height: 340px;
+            min-height: 350px;
             border: none;
             background: #000;
         }
 
         .card-body {
-            padding: 14px;
+            padding: 12px;
             font-size: 0.95rem;
             line-height: 1.6;
             word-break: break-word;
@@ -207,16 +207,12 @@
             text-decoration: none;
         }
 
-        .card-body a:hover {
-            text-decoration: underline;
-        }
-
         .card-footer {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 10px 14px;
-            background: rgba(0, 0, 0, 0.2);
+            padding: 8px 12px;
+            background: rgba(0, 0, 0, 0.25);
             font-size: 0.8rem;
             color: var(--text-sub);
         }
@@ -227,22 +223,22 @@
             font-weight: 600;
         }
 
-        /* رسائل الحالة */
-        .state-message {
+        /* رسائل التحميل والأخطاء */
+        .status-box {
             text-align: center;
-            padding: 30px 15px;
+            padding: 24px 10px;
             color: var(--text-sub);
-            font-size: 0.95rem;
+            font-size: 0.9rem;
         }
 
         .spinner {
-            width: 26px;
-            height: 26px;
+            width: 24px;
+            height: 24px;
             border: 3px solid var(--border);
             border-top: 3px solid var(--primary);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
-            margin: 0 auto 12px;
+            margin: 0 auto 8px;
         }
 
         @keyframes spin {
@@ -254,39 +250,39 @@
 <body>
 
     <header>
-        <div class="header-content">
-            <div class="header-row">
-                <div class="logo">⚡ مستكشف تيليجرام</div>
-                <select id="yearSelect" class="year-select" onchange="onYearChange(this.value)">
+        <div class="header-box">
+            <div class="header-top">
+                <div class="brand">⚡ تليجرام كلاود</div>
+                <select id="yearSelect" class="year-dropdown" onchange="switchYear(this.value)">
                     <option value="2026">2026</option>
                 </select>
             </div>
-            <div class="search-bar">
-                <input type="text" id="searchInput" placeholder="ابحث في محتوى المنشورات..." onkeypress="if(event.key === 'Enter') triggerSearch()">
+            <div class="search-row">
+                <input type="text" id="searchInput" placeholder="ابحث في نصوص المنشورات..." onkeypress="if(event.key === 'Enter') triggerSearch()">
                 <button onclick="triggerSearch()">بحث</button>
             </div>
         </div>
     </header>
 
-    <main class="container" id="feed"></main>
+    <main class="feed-container" id="feed"></main>
 
-    <div class="state-message" id="statusMessage">
+    <div class="status-box" id="statusBox">
         <div class="spinner"></div>
         جارٍ الاتصال بقاعدة البيانات السحابية...
     </div>
 
     <script>
-        const REPO = "Moo408/dat-9f82c4";
-        const BASE_URL = `https://huggingface.co/datasets/${REPO}/resolve/main/`;
+        const REPO_ID = "Moo408/dat-9f82c4";
+        const HF_BASE = `https://huggingface.co/datasets/${REPO_ID}/resolve/main/`;
 
         let db = null;
         let conn = null;
-        let activeYear = "2026";
+        let selectedYear = "2026";
         let offset = 0;
         const LIMIT = 20;
-        let isQuerying = false;
-        let hasMorePosts = true;
-        let currentSearch = "";
+        let isFetching = false;
+        let hasMore = true;
+        let activeSearch = "";
 
         async function init() {
             try {
@@ -297,18 +293,24 @@
                 await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
                 conn = await db.connect();
 
+                // تفعيل دعم HTTP والملفات السحابية داخل DuckDB
+                try {
+                    await conn.query("INSTALL httpfs; LOAD httpfs;");
+                } catch (e) {
+                    console.log("httpfs built-in loaded");
+                }
+
                 await loadManifest();
-                await registerYearFile(activeYear);
-                await loadPosts(true);
+                await fetchFeed(true);
             } catch (err) {
-                console.error("Initialization Failed:", err);
-                showStatus("تعذر بدء الاتصال بمحرك البحث، يرجى إعادة المحاولة.", false);
+                console.error("DuckDB Init Error:", err);
+                setStatus("خطأ في تشغيل محرك البيانات. يرجى إعادة تحديث الصفحة.", false);
             }
         }
 
         async function loadManifest() {
             try {
-                const res = await fetch(`${BASE_URL}manifest.json`);
+                const res = await fetch(`${HF_BASE}manifest.json`);
                 if (!res.ok) return;
                 const manifest = await res.json();
                 const select = document.getElementById("yearSelect");
@@ -318,16 +320,16 @@
                 years.forEach(y => {
                     const opt = document.createElement("option");
                     opt.value = y;
-                    const count = Number(manifest[y].total_rows || 0).toLocaleString();
-                    opt.textContent = y === "unknown" ? `غير مؤرخ (${count})` : `${y} (${count})`;
+                    const rows = Number(manifest[y].total_rows || 0).toLocaleString();
+                    opt.textContent = y === "unknown" ? `غير مؤرخ (${rows})` : `${y} (${rows})`;
                     select.appendChild(opt);
                 });
 
                 if (years.includes("2026")) {
-                    activeYear = "2026";
+                    selectedYear = "2026";
                     select.value = "2026";
                 } else if (years.length > 0) {
-                    activeYear = years[0];
+                    selectedYear = years[0];
                     select.value = years[0];
                 }
             } catch (e) {
@@ -335,79 +337,68 @@
             }
         }
 
-        async function registerYearFile(year) {
-            const fileName = `posts_${year}.parquet`;
-            const fileUrl = `${BASE_URL}${fileName}`;
-            try {
-                // تسجيل الملف بمساره المباشر الصافي لتمكين HTTP Range Requests
-                await db.registerFileURL(fileName, fileUrl, duckdb.DuckDBDataProtocol.HTTP, false);
-            } catch (e) {
-                console.error("Registration error:", e);
-            }
-        }
+        async function fetchFeed(isReset = false) {
+            if (isFetching || (!hasMore && !isReset)) return;
+            isFetching = true;
 
-        async function loadPosts(reset = false) {
-            if (isQuerying || (!hasMorePosts && !reset)) return;
-            isQuerying = true;
-
-            const statusEl = document.getElementById("statusMessage");
+            const statusEl = document.getElementById("statusBox");
             statusEl.style.display = "block";
-            statusEl.innerHTML = '<div class="spinner"></div> جلب البيانات...';
+            statusEl.innerHTML = '<div class="spinner"></div> جلب المنشورات...';
 
-            if (reset) {
+            if (isReset) {
                 offset = 0;
-                hasMorePosts = true;
+                hasMore = true;
                 document.getElementById("feed").innerHTML = "";
             }
 
-            const targetTable = `posts_${activeYear}.parquet`;
+            const targetUrl = `${HF_BASE}posts_${selectedYear}.parquet`;
             let sql = "";
 
-            if (currentSearch.trim()) {
-                const sanitized = currentSearch.replace(/'/g, "''");
+            if (activeSearch.trim()) {
+                const cleanText = activeSearch.replace(/'/g, "''");
                 sql = `
                     SELECT username, post_id, text, image, video, media_type, views, date 
-                    FROM '${targetTable}' 
-                    WHERE text ILIKE '%${sanitized}%' 
+                    FROM read_parquet('${targetUrl}') 
+                    WHERE text ILIKE '%${cleanText}%' 
                     ORDER BY date DESC 
                     LIMIT ${LIMIT} OFFSET ${offset};
                 `;
             } else {
                 sql = `
                     SELECT username, post_id, text, image, video, media_type, views, date 
-                    FROM '${targetTable}' 
+                    FROM read_parquet('${targetUrl}') 
                     ORDER BY date DESC 
                     LIMIT ${LIMIT} OFFSET ${offset};
                 `;
             }
 
             try {
-                const res = await conn.query(sql);
-                const records = res.toArray().map(row => row.toJSON());
+                const result = await conn.query(sql);
+                const posts = result.toArray().map(row => row.toJSON());
 
-                if (records.length < LIMIT) {
-                    hasMorePosts = false;
+                if (posts.length < LIMIT) {
+                    hasMore = false;
                 }
 
-                if (records.length === 0 && reset) {
-                    showStatus("لا توجد منشورات متطابقة مع البحث.", false);
-                    isQuerying = false;
+                if (posts.length === 0 && isReset) {
+                    setStatus("لا توجد منشورات متطابقة مع البحث.", false);
+                    isFetching = false;
                     return;
                 }
 
-                renderPosts(records);
-                offset += records.length;
+                renderPosts(posts);
+                offset += posts.length;
 
-                if (!hasMorePosts) {
-                    showStatus("وصلت إلى نهاية هذا الأرشيف.", false);
+                if (!hasMore) {
+                    setStatus("تم الوصول لنهاية هذا الأرشيف.", false);
                 } else {
                     statusEl.style.display = "none";
                 }
             } catch (err) {
-                console.error("Execution error:", err);
-                showStatus("خطأ في قراءة الأرشيف المحدد.", false);
+                console.error("DuckDB Query Error:", err);
+                setStatus("تعذر جلب البيانات من السحابة، يرجى المحاولة مرة أخرى.", false);
             } finally {
-                isQuerying = false;
+                isFetching = false;
             }
         }
 
@@ -418,26 +409,26 @@
                 const card = document.createElement("article");
                 card.className = "card";
 
-                // استخراج الوسائط
+                // معالجة الفيديو والميديا
                 let mediaHtml = "";
                 const isVideo = p.media_type === "video" || (p.video && p.video.trim() !== "");
 
                 if (isVideo) {
                     mediaHtml = `
-                        <div class="media-wrapper">
+                        <div class="media-container">
                             <iframe src="https://t.me/${p.username}/${p.post_id}?embed=1" allowfullscreen></iframe>
                         </div>
                     `;
                 } else if (p.image && p.image.trim() !== "") {
                     mediaHtml = `
-                        <div class="media-wrapper">
+                        <div class="media-container">
                             <img src="${p.image}" loading="lazy" onerror="this.parentElement.style.display='none'">
                         </div>
                     `;
                 }
 
-                const displayDate = p.date ? p.date.replace("T", " ").substring(0, 16) : "";
-                const viewsFormatted = Number(p.views || 0).toLocaleString();
+                const postTime = p.date ? p.date.replace("T", " ").substring(0, 16) : "";
+                const viewsCount = Number(p.views || 0).toLocaleString();
 
                 card.innerHTML = `
                     <div class="card-header">
@@ -445,12 +436,12 @@
                             <div class="channel-avatar">${(p.username || "T")[0].toUpperCase()}</div>
                             <a href="https://t.me/${p.username}" target="_blank" class="channel-name">@${p.username}</a>
                         </div>
-                        <span class="post-date">${displayDate}</span>
+                        <span class="post-time">${postTime}</span>
                     </div>
                     ${mediaHtml}
                     <div class="card-body">${formatBody(p.text || "")}</div>
                     <div class="card-footer">
-                        <span>👁️ ${viewsFormatted} مشاهدة</span>
+                        <span>👁️ ${viewsCount} مشاهدة</span>
                         <a href="https://t.me/${p.username}/${p.post_id}" target="_blank">فتح في تليجرام ↗</a>
                     </div>
                 `;
@@ -463,28 +454,27 @@
             return str.replace(/(https?:\/\/[^\s]+)/g, url => `<a href="${url}" target="_blank">${url}</a>`);
         }
 
-        function showStatus(text, showSpinner = true) {
-            const statusEl = document.getElementById("statusMessage");
+        function setStatus(msg, showLoader = true) {
+            const statusEl = document.getElementById("statusBox");
             statusEl.style.display = "block";
-            statusEl.innerHTML = showSpinner ? `<div class="spinner"></div> ${text}` : text;
+            statusEl.innerHTML = showLoader ? `<div class="spinner"></div> ${msg}` : msg;
         }
 
-        async function onYearChange(year) {
-            activeYear = year;
-            await registerYearFile(year);
-            await loadPosts(true);
+        function switchYear(year) {
+            selectedYear = year;
+            fetchFeed(true);
         }
 
         function triggerSearch() {
-            currentSearch = document.getElementById("searchInput").value;
-            loadPosts(true);
+            activeSearch = document.getElementById("searchInput").value;
+            fetchFeed(true);
         }
 
-        // التمرير اللانهائي
+        // التمرير التلقائي اللانهائي
         window.addEventListener("scroll", () => {
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
-                if (!isQuerying && hasMorePosts) {
-                    loadPosts(false);
+                if (!isFetching && hasMore) {
+                    fetchFeed(false);
                 }
             }
         });
