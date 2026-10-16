@@ -2,9 +2,8 @@ name: Telegram Crawler & Parquet Sync
 
 on:
   schedule:
-    # يعمل كل 30 دقيقة آلياً
+    # يعمل آلياً كل 30 دقيقة
     - cron: '*/30 * * * *'
-  # يتيح لك تشغيله يدوياً بنقرة زر للتجربة في أي وقت
   workflow_dispatch:
 
 jobs:
@@ -24,9 +23,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pandas pyarrow huggingface_hub aiohttp beautifulsoup4
+          pip install pandas pyarrow huggingface_hub aiohttp beautifulsoup4 requests
 
-      - name: Run Telegram Crawler
+      - name: Run Telegram Crawler (Queue 1500)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
@@ -34,7 +33,7 @@ jobs:
           mkdir -p crawler_output
           python run_crawler.py
 
-      - name: Sync and Upload to Hugging Face
+      - name: Sync, Partition & Upload
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO_ID: ${{ secrets.HF_REPO_ID }}
