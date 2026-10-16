@@ -7,8 +7,8 @@ import pandas as pd
 from datetime import datetime
 
 # ==================== إعدادات الكراولر ====================
-CHANNELS_TO_SCRAPE_PER_RUN = 50   # عدد القنوات التي يتم فحصها بكل دورة في GitHub Actions
-CONCURRENT_REQUESTS = 5           # سرعة التوازي لتفادي تقييد التيليجرام
+CHANNELS_TO_SCRAPE_PER_RUN = 500   # عدد القنوات التي يتم فحصها بكل دورة في GitHub Actions
+CONCURRENT_REQUESTS = 10           # سرعة التوازي لتفادي تقييد التيليجرام
 OUTPUT_DIR = "crawler_output"
 # ==========================================================
 
