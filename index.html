@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>تليجرام فيد</title>
+    <title>Telegram Feed</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -247,7 +247,7 @@
     <header>
         <div class="search-box-wrap">
             <input type="text" id="searchInput" placeholder="بحث سريع في المنشورات..." onkeypress="if(event.key === 'Enter') triggerSearch()">
-            <button onclick="triggerSearch()">بحث</button>
+            <button onclick="triggerSearch()">Search</button>
         </div>
     </header>
 
@@ -255,7 +255,7 @@
 
     <div class="status-box" id="statusBox">
         <div class="spinner"></div>
-        جلب المنشورات...
+       Loading...
     </div>
 
     <script>
@@ -365,7 +365,7 @@
                     <div class="card-body">${formatBody(p.text || "")}</div>
                     <div class="card-footer">
                         <span>👁️ ${viewsCount} مشاهدة</span>
-                        <a href="https://t.me/${p.username}/${p.post_id}" target="_blank">فتح في تليجرام ↗</a>
+                        <a href="https://t.me/${p.username}/${p.post_id}" target="_blank">Telegram ↗</a>
                     </div>
                 `;
                 feed.appendChild(card);
