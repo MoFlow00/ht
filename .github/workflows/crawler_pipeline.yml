@@ -2,7 +2,9 @@ name: Telegram Crawler & Parquet Sync
 
 on:
   schedule:
-    - cron: '0 */6 * * *'
+    # يعمل كل 30 دقيقة آلياً
+    - cron: '*/30 * * * *'
+  # يتيح لك تشغيله يدوياً بنقرة زر للتجربة في أي وقت
   workflow_dispatch:
 
 jobs:
