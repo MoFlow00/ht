@@ -6,6 +6,7 @@
     <title>مستكشف تيليجرام السحابي</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-wasm.js"></script>
     <style>
         :root {
             --bg-page: #0b1120;
@@ -32,7 +33,6 @@
             padding-bottom: 60px;
         }
 
-        /* شريط التحكم العلوي */
         header {
             position: sticky;
             top: 0;
@@ -108,7 +108,6 @@
             cursor: pointer;
         }
 
-        /* حاوية البطاقات */
         .feed-container {
             max-width: 620px;
             margin: 12px auto;
@@ -222,7 +221,6 @@
             font-weight: 600;
         }
 
-        /* رسائل التحميل والأخطاء */
         .status-box {
             text-align: center;
             padding: 24px 10px;
@@ -271,7 +269,6 @@
         جارٍ تهيئة محرك البيانات...
     </div>
 
-    <!-- استدعاء المكتبة كـ Module -->
     <script type="module">
         import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/+esm';
 
@@ -290,7 +287,6 @@
 
         async function init() {
             try {
-                // إعداد الـ Worker للعمل كـ Blob لتخطي مشاكل GitHub Pages CORS
                 const MANUAL_BUNDLES = {
                     mvp: {
                         mainModule: 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.28.0/dist/duckdb-mvp.wasm',
@@ -386,6 +382,7 @@
                 document.getElementById("feed").innerHTML = "";
             }
 
+            // تم حذف ORDER BY لمنع تحميل الملف كله بالكامل وسحب أول أجزاء فقط
             let sql = "";
             if (activeSearch.trim()) {
                 const cleanText = activeSearch.replace(/'/g, "''");
@@ -393,14 +390,12 @@
                     SELECT username, post_id, text, image, video, media_type, views, date 
                     FROM '${currentTableName}' 
                     WHERE text ILIKE '%${cleanText}%' 
-                    ORDER BY date DESC 
                     LIMIT ${LIMIT} OFFSET ${offset};
                 `;
             } else {
                 sql = `
                     SELECT username, post_id, text, image, video, media_type, views, date 
                     FROM '${currentTableName}' 
-                    ORDER BY date DESC 
                     LIMIT ${LIMIT} OFFSET ${offset};
                 `;
             }
@@ -492,7 +487,6 @@
             statusEl.innerHTML = showLoader ? `<div class="spinner"></div> ${msg}` : msg;
         }
 
-        // جعل الدوال متاحة للـ DOM
         window.switchYear = async function(year) {
             selectedYear = year;
             await setupPartition(year);
