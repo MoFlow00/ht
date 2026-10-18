@@ -154,7 +154,6 @@ async def fetch_channel(session, semaphore, username):
     url = f"https://t.me/s/{username}"
     now_iso = datetime.now(timezone.utc).isoformat()
     async with semaphore:
-        # تأخير عشوائي خفيف لتفادي الـ Rate Limit
         await asyncio.sleep(random.uniform(0.1, 0.4))
         try:
             req_headers = {"User-Agent": random.choice(USER_AGENTS)}
@@ -190,7 +189,7 @@ async def fetch_channel(session, semaphore, username):
     return dead_meta, [], set()
 
 async def main():
-    print("[*] Starting High-Speed Queue Telegram Cloud Scraper...")
+    print("[*] Starting Tech-Prioritized Queue Telegram Cloud Scraper...")
 
     HF_TOKEN = os.getenv("HF_TOKEN")
     HF_REPO_ID = os.getenv("HF_REPO_ID", "Moo408/dat-9f82c4")
@@ -206,18 +205,30 @@ async def main():
         )
         c_df = pd.read_parquet(c_path)
         
-        # اختيار القنوات غير المفحوصة بدقة
+        # 1. تصفية القنوات التي لم تفحص بعد
         if "last_checked" in c_df.columns:
-            uninspected = c_df[c_df["last_checked"].isna() | (c_df["last_checked"].astype(str).str.strip() == "")]
+            uninspected = c_df[c_df["last_checked"].isna() | (c_df["last_checked"].astype(str).str.strip() == "")].copy()
         else:
-            uninspected = c_df
+            uninspected = c_df.copy()
 
         remaining_count = len(uninspected)
-        print(f"[*] Channels currently waiting in queue: {remaining_count:,}")
+        print(f"[*] Channels waiting in queue: {remaining_count:,}")
 
         if remaining_count > 0:
-            target_usernames = uninspected["username"].dropna().head(CHANNELS_TO_SCRAPE_PER_RUN).tolist()
-            print(f"[+] Loaded {len(target_usernames)} target channels for this run!")
+            # 2. بناء طابور الأولوية: القنوات التقنية أولاً
+            tech_pattern = r'python|termux|github|mod|apk|android|script|linux|code|tool|hack|api|dev'
+            
+            is_tech = uninspected["username"].str.contains(tech_pattern, case=False, na=False)
+            tech_channels = uninspected[is_tech]
+            other_channels = uninspected[~is_tech]
+
+            print(f"[🔥] Found {len(tech_channels):,} UNINSPECTED TECH CHANNELS in database!")
+            
+            # وضع القنوات التقنية في صدارة الطابور
+            priority_queue = pd.concat([tech_channels, other_channels], ignore_index=True)
+            target_usernames = priority_queue["username"].dropna().head(CHANNELS_TO_SCRAPE_PER_RUN).tolist()
+            
+            print(f"[+] Loaded top {len(target_usernames)} target channels (Prioritizing Tech) for this run!")
         else:
             print("[!] All channels have been inspected!")
 
@@ -225,7 +236,7 @@ async def main():
         print(f"[-] Could not load channels queue: {e}")
 
     if not target_usernames:
-        print("[-] Queue is empty. Exiting.")
+        print("[-] No channels to process this run.")
         return
 
     semaphore = asyncio.Semaphore(CONCURRENT_REQUESTS)
