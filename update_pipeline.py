@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import requests
 import pandas as pd
@@ -13,6 +14,13 @@ CRAWLER_DIR = "crawler_output"
 
 os.makedirs(LOCAL_DIR, exist_ok=True)
 api = HfApi(token=HF_TOKEN)
+
+# قائمة حظر صريحة لحسابات ومواقع العروض والصفقات والمتاجر
+COMMERCIAL_SPAM = [
+    "shopping", "deals", "amazon", "amzn", "flipkart", "discount", "promo",
+    "coupon", "myntra", "price drop", "loot", "cashback", "sale", "store",
+    "jobsinuae", "wazaif", "وظائف", "فرصة عمل", "شواغر"
+]
 
 def get_cloudflare_blacklist():
     """جلب قائمة القنوات المحظورة مركزياً من Cloudflare KV لتطهيرها نهائياً"""
@@ -56,14 +64,16 @@ def get_curated_keywords():
                     return keywords
         except Exception as e:
             print(f"[-] Could not read interests.json: {e}")
-            
-    # قائمة افتراضية ذكية في حال لم يتم العثور على الملف
-    default_keywords = ["تقنية", "برمجة", "بايثون", "ذكاء", "ai", "python", "tech", "tools", "كتب", "أخبار"]
-    print(f"[*] Using default interest keywords ({len(default_keywords)}).")
+
+    # كلمات افتراضية مركزة في حال غياب الملف
+    default_keywords = [
+        "بايثون", "برمجة", "تطوير الويب", "ذكاء اصطناعي", "تعلم الآلة",
+        "كتاب", "كتب", "رواية", "روايات", "python", "github", "coding"
+    ]
+    print(f"[*] Using fallback curated keywords ({len(default_keywords)}).")
     return default_keywords
 
 def extract_year_safely(date_val):
-    """استخراج السنة بأمان مع دعم القيم الفارغة والتالفة"""
     if pd.isna(date_val) or not str(date_val).strip():
         return "unknown"
     s = str(date_val).strip()
@@ -80,7 +90,6 @@ def extract_year_safely(date_val):
     return "unknown"
 
 def sync_channels(blacklist):
-    """دمج القنوات وتطهير القنوات المحظورة نهائياً من c.parquet"""
     new_c_path = os.path.join(CRAWLER_DIR, "c.parquet")
     new_c_df = pd.DataFrame()
     if os.path.exists(new_c_path):
@@ -99,7 +108,7 @@ def sync_channels(blacklist):
 
     merged_c = merged_c.drop_duplicates(subset=["username"], keep="last")
 
-    # الحذف الفيزيائي الفعلي للقنوات المحظورة من قاعدة البيانات
+    # الحذف الفيزيائي للقنوات المحظورة
     if blacklist and "username" in merged_c.columns:
         initial_c_count = len(merged_c)
         merged_c = merged_c[~merged_c["username"].astype(str).str.lower().isin(blacklist)]
@@ -124,7 +133,7 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def push_to_cloudflare_kv(posts_df):
-    """فلترة المنشورات بناءً على interests.json وضخها لـ Cloudflare KV"""
+    """فلترة صارمة بمطابقة الكلمات الكاملة ومنع الإعلانات قبل الدفع لـ Cloudflare KV"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -135,23 +144,43 @@ def push_to_cloudflare_kv(posts_df):
 
     keywords = get_curated_keywords()
 
+    # تجهيز أنماط Regex تمنع تطابق الحروف الجزئية (مثل منع ai داخل alhabaiab)
+    compiled_patterns = []
+    for k in keywords:
+        k_clean = k.strip().lower()
+        if not k_clean:
+            continue
+        if re.match(r'^[a-z0-9_-]+$', k_clean):
+            compiled_patterns.append(re.compile(rf'\b{re.escape(k_clean)}\b', re.IGNORECASE))
+        else:
+            compiled_patterns.append(re.compile(rf'(?:^|\s|[^\w\u0621-\u064A]){re.escape(k_clean)}(?:$|\s|[^\w\u0621-\u064A])', re.IGNORECASE))
+
     if "date" in posts_df.columns:
         posts_df = posts_df.sort_values(by="date", ascending=False)
 
-    # فلترة المنشورات التي تتطابق نصوصها أو معرفاتها مع اهتماماتك
-    def matches_interest(row):
+    def matches_strict_interest(row):
         text = str(row.get("text", "")).lower()
         username = str(row.get("username", "")).lower()
-        content = f"{text} {username}"
-        return any(k in content for k in keywords)
 
-    curated_df = posts_df[posts_df.apply(matches_interest, axis=1)]
-    print(f"[+] Found {len(curated_df):,} matching curated posts out of {len(posts_df):,} total.")
+        # 1. استبعاد قنوات ومواقع الصفقات والتسويق التجاري والوظائف
+        if any(spam_word in username for spam_word in COMMERCIAL_SPAM):
+            return False
+        if any(bad_link in text for bad_link in ["amzn.to", "myntr", "flipkart", "al-wazaif", "addlist/"]):
+            return False
+
+        # 2. فحص النص واسم المعرف للتأكد من وجود الكلمة كاملة ومستقلة
+        for pat in compiled_patterns:
+            if pat.search(text) or pat.search(username):
+                return True
+
+        return False
+
+    curated_df = posts_df[posts_df.apply(matches_strict_interest, axis=1)]
+    print(f"[+] Found {len(curated_df):,} strictly matched curated posts out of {len(posts_df):,} total.")
 
     cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
     available_cols = [c for c in cols_to_keep if c in curated_df.columns]
-    
-    # أخذ أحدث 3,000 منشور مفلتر على مزاجك
+
     latest_subset = curated_df[available_cols].head(3000).fillna("").to_dict(orient="records")
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/latest_posts"
@@ -162,12 +191,11 @@ def push_to_cloudflare_kv(posts_df):
 
     res = requests.put(url, headers=headers, json=latest_subset)
     if res.status_code == 200:
-        print(f"[✓] Successfully synced {len(latest_subset):,} VIP Curated posts to Cloudflare KV Edge!")
+        print(f"[✓] Successfully pushed {len(latest_subset):,} CLEAN Curated posts to Cloudflare KV!")
     else:
         print(f"[-] Cloudflare KV sync failed: {res.text}")
 
 def sync_partitioned_posts(blacklist):
-    """دمج وتطهير المنشورات السنوية في Hugging Face وضخ أحدثها إلى Cloudflare"""
     new_p_path = os.path.join(CRAWLER_DIR, "p.parquet")
     new_posts_df = pd.DataFrame()
     if os.path.exists(new_p_path):
@@ -181,7 +209,6 @@ def sync_partitioned_posts(blacklist):
     except Exception:
         manifest_data = {"2026": {"file": "posts_2026.parquet"}}
 
-    # دمج السنوات الجديدة إن وجدت
     if not new_posts_df.empty:
         new_posts_df["year_partition"] = new_posts_df["date"].apply(extract_year_safely)
         for y in new_posts_df["year_partition"].unique():
@@ -191,7 +218,6 @@ def sync_partitioned_posts(blacklist):
     all_2026_df = pd.DataFrame()
     total_posts_all_years = 0
 
-    # مراجعة وتطهير ملفات كل السنوات
     for year, meta in manifest_data.items():
         partition_filename = meta.get("file", f"posts_{year}.parquet")
         existing_year_df = pd.DataFrame()
@@ -201,7 +227,6 @@ def sync_partitioned_posts(blacklist):
         except Exception:
             pass
 
-        # دمج الجديد التابع لهذه السنة
         chunk_new = pd.DataFrame()
         if not new_posts_df.empty and "year_partition" in new_posts_df.columns:
             chunk_new = new_posts_df[new_posts_df["year_partition"] == year].drop(columns=["year_partition"], errors="ignore")
@@ -215,7 +240,7 @@ def sync_partitioned_posts(blacklist):
         else:
             merged_year = merged_year.drop_duplicates(subset=["username", "post_id"], keep="last")
 
-        # الحذف الفيزيائي الفعلي لبوستات القنوات المحظورة من ملفات Parquet
+        # الحذف الفيزيائي للبوستات التابعة لقنوات البلاك ليست
         if blacklist and "username" in merged_year.columns:
             initial_p_count = len(merged_year)
             merged_year = merged_year[~merged_year["username"].astype(str).str.lower().isin(blacklist)]
@@ -255,7 +280,7 @@ def sync_partitioned_posts(blacklist):
         commit_message="Update dataset partitions manifest"
     )
 
-    # دفع أحدث المنشورات المفلترة لـ Cloudflare KV
+    # تصفية ودفع أحدث المنشورات لـ Cloudflare KV
     if not all_2026_df.empty:
         push_to_cloudflare_kv(all_2026_df)
 
@@ -269,10 +294,7 @@ def main():
     print("🚀 بدء مزامنة ورفع وتطهير البيانات السحابية...")
     print("=" * 65)
 
-    # 1. جلب قائمة الحظر من Cloudflare KV
     blacklist = get_cloudflare_blacklist()
-
-    # 2. مزامنة القنوات والبوستات مع التطهير الفعلي
     c_crawled, c_total, c_remaining = sync_channels(blacklist)
     p_crawled, p_total = sync_partitioned_posts(blacklist)
 
