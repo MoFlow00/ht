@@ -60,7 +60,6 @@
     "moonshot",
     "minimax",
     "glm",
-    "z.ai",
     "zhipu",
     "qwen coder",
     "qwen3",
@@ -134,7 +133,6 @@
     "tailscale",
     "wireguard",
     "cron job",
-    "workflow",
     "ci/cd",
     "serverless",
     "free hosting",
@@ -191,7 +189,6 @@
     "lineageos",
     "fdroid",
     "f-droid repo",
-    "apk",
     "xapk",
     "apkm",
     "arm64-v8a",
@@ -207,7 +204,6 @@
     "channel directory",
     "message search",
     "public channels",
-    "t.me",
     "telethon",
     "pyrogram",
     "tdlib",
@@ -255,7 +251,6 @@
     "forked project",
     "starter kit",
     "boilerplate",
-    "template",
     "example project",
     "reference implementation",
     "free forever",
@@ -268,7 +263,6 @@
     "latest release",
     "changelog",
     "roadmap",
-    "beta",
     "nightly",
     "experimental",
     "awesome-list",
@@ -313,27 +307,5 @@
     "بديل مجاني",
     "تطبيقات مفتوحة المصدر",
     "أدوات المطورين"
-  ],
-  "discovery_queries": [
-    {
-      "title": "أدوات AI مجانية",
-      "query": "(\"free API\" OR \"free tier\" OR \"open source\") AND (\"LLM\" OR \"AI agent\" OR \"coding agent\")"
-    },
-    {
-      "title": "مشاريع GitHub غير المشهورة",
-      "query": "(\"awesome\" OR \"hidden gem\" OR \"alternative\") AND (\"github\" OR \"self-hosted\")"
-    },
-    {
-      "title": "ملفات بيانات ضخمة",
-      "query": "(\"parquet\" OR \"jsonl\" OR \"sqlite\" OR \"csv.gz\") AND (\"dataset\" OR \"archive\" OR \"dump\")"
-    },
-    {
-      "title": "أتمتة وتشغيل سحابي",
-      "query": "(\"GitHub Actions\" OR \"Cloudflare Workers\" OR \"serverless\") AND (\"free\" OR \"automation\" OR \"workflow\")"
-    },
-    {
-      "title": "أدوات Termux",
-      "query": "(\"termux\" OR \"proot-distro\") AND (\"python\" OR \"linux\" OR \"automation\" OR \"self-hosted\")"
-    }
   ]
 }
