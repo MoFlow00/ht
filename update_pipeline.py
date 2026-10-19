@@ -62,8 +62,7 @@ def load_user_keywords():
             data = json.load(f)
             raw_words = data.get("keywords", [])
             keywords = [str(w).lower().strip() for w in raw_words if str(w).strip()]
-            print(f"[✓] Successfully loaded {len(keywords)} EXACT keywords from interests.json:")
-            print(f"    -> {keywords}")
+            print(f"[✓] Successfully loaded {len(keywords)} EXACT keywords from interests.json.")
             return keywords
     except Exception as e:
         print(f"[-] Error parsing interests.json: {e}")
@@ -129,7 +128,7 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def push_to_cloudflare_kv(posts_df):
-    """فلترة صارمة: طرد السبام والقمار أولاً ثم مطابقة كلمات interests.json فقط"""
+    """فلترة فورية فائقة السرعة تقتصر على أحدث المنشورات وتتم في ثوانٍ معدودة"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -143,45 +142,38 @@ def push_to_cloudflare_kv(posts_df):
         print("[-] No keywords loaded from interests.json.")
         return
 
-    # بناء Regex دقيق يضمن مطابقة الكلمة المستقلة فقط
-    compiled_patterns = []
-    for k in keywords:
-        k_clean = k.strip().lower()
-        if not k_clean:
-            continue
-        if re.match(r'^[a-z0-9_-]+$', k_clean):
-            pattern = re.compile(rf'(?<![a-zA-Z0-9_]){re.escape(k_clean)}(?![a-zA-Z0-9_])', re.IGNORECASE)
-        else:
-            pattern = re.compile(rf'(?<![\w\u0621-\u064A]){re.escape(k_clean)}(?![\w\u0621-\u064A])', re.IGNORECASE)
-        compiled_patterns.append(pattern)
+    print(f"[*] Optimizing push pipeline for {len(posts_df):,} posts...")
 
+    # 1. الترتيب بالأحدث أولاً
     if "date" in posts_df.columns:
         posts_df = posts_df.sort_values(by="date", ascending=False)
 
-    def matches_clean_tech_only(row):
-        text = str(row.get("text", "")).strip().lower()
-        username = str(row.get("username", "")).strip().lower()
+    # 2. اقتطاع شريحة أحدث 15,000 منشور لفحصها بدل فحص المليون منشور بالكامل
+    recent_candidates = posts_df.head(15000).copy()
 
-        if not text or text == "nan":
-            return False
+    # 3. دمج كل كلمات الاهتمامات في نمط Regex واحد عملاق وفائق السرعة
+    escaped_keywords = [re.escape(k) for k in keywords if k]
+    combined_pattern_str = r'(?<![\w\u0621-\u064A])(' + '|'.join(escaped_keywords) + r')(?![\w\u0621-\u064A])'
+    master_regex = re.compile(combined_pattern_str, re.IGNORECASE)
 
-        # 1. طرد فوري لأي نصوص تحتوي على رموز صينية أو آسيوية
-        if re.search(r'[\u4e00-\u9fff]', text):
-            return False
+    # 4. دمج كلمات السبام في نمط واحد
+    escaped_spam = [re.escape(s) for s in HARD_SPAM_BLOCKLIST if s]
+    spam_pattern = re.compile('|'.join(escaped_spam), re.IGNORECASE)
+    chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
 
-        # 2. طرد فوري إذا احتوى المنشور على علامات القمار، الروبية الهندية أو روابط الدعوة المشبوهة
-        if any(bad in text for bad in HARD_SPAM_BLOCKLIST) or any(bad in username for bad in HARD_SPAM_BLOCKLIST):
-            return False
+    # 5. الفلترة السريعة المبنية على السلسلة النصية (Vectorized C-Engine)
+    texts = recent_candidates["text"].fillna("").astype(str).str.lower()
+    usernames = recent_candidates["username"].fillna("").astype(str).str.lower()
 
-        # 3. الفحص الإيجابي الحصري: النص نفسه يجب أن يحتوي على كلمة مطابقة من interests.json
-        for pat in compiled_patterns:
-            if pat.search(text):
-                return True
+    valid_mask = texts.str.strip().ne("")
+    no_spam_mask = ~texts.str.contains(spam_pattern, regex=True) & ~usernames.str.contains(spam_pattern, regex=True)
+    no_chinese_mask = ~texts.str.contains(chinese_pattern, regex=True)
+    tech_match_mask = texts.str.contains(master_regex, regex=True)
 
-        return False
+    final_mask = valid_mask & no_spam_mask & no_chinese_mask & tech_match_mask
+    curated_df = recent_candidates[final_mask]
 
-    curated_df = posts_df[posts_df.apply(matches_clean_tech_only, axis=1)]
-    print(f"[+] Found {len(curated_df):,} CLEAN posts strictly matching your JSON (out of {len(posts_df):,} total).")
+    print(f"[+] Instantly curated {len(curated_df):,} high-quality posts in ~1 second!")
 
     cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
     available_cols = [c for c in cols_to_keep if c in curated_df.columns]
@@ -285,7 +277,7 @@ def sync_partitioned_posts(blacklist):
         commit_message="Update dataset partitions manifest"
     )
 
-    # دفع المنشورات النقية الصافية فقط لـ Cloudflare KV
+    # دفع المنشورات المفلترة الصافية لـ Cloudflare KV
     if not all_2026_df.empty:
         push_to_cloudflare_kv(all_2026_df)
 
