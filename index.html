@@ -1,324 +1,585 @@
-import os
-import re
-import json
-import requests
-import pandas as pd
-from datetime import datetime, timezone
-from huggingface_hub import HfApi, hf_hub_download
-
-# ==================== إعدادات البيئة ====================
-HF_REPO_ID = os.getenv("HF_REPO_ID", "Moo408/dat-9f82c4")
-HF_TOKEN = os.getenv("HF_TOKEN")
-LOCAL_DIR = "data_sync"
-CRAWLER_DIR = "crawler_output"
-
-os.makedirs(LOCAL_DIR, exist_ok=True)
-api = HfApi(token=HF_TOKEN)
-
-# قائمة استبعاد صريحة للإعلانات والمراهنات والسبام الهندي والمتاجر
-SPAM_TRIGGERS = [
-    "yono", "bonus", "rummy", "earning", "₹", "bhailog", "bhai", "win cash",
-    "refer", "loot", "t.me/+", "joinchat", "shopping", "deals", "amazon",
-    "amzn", "flipkart", "discount", "promo", "coupon", "myntra", "price drop",
-    "sale", "store", "jobsinuae", "wazaif", "وظائف", "فرصة عمل", "شواغر", "addlist/"
-]
-
-def get_cloudflare_blacklist():
-    """جلب قائمة القنوات المحظورة مركزياً من Cloudflare KV لتطهيرها نهائياً"""
-    cf_token = os.getenv("CF_API_TOKEN")
-    cf_account = os.getenv("CF_ACCOUNT_ID")
-    cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
-
-    if not (cf_token and cf_account and cf_kv_id):
-        return set()
-
-    url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/blacklist"
-    headers = {
-        "Authorization": f"Bearer {cf_token}",
-        "Content-Type": "application/json"
-    }
-
-    try:
-        res = requests.get(url, headers=headers, timeout=15)
-        if res.status_code == 200:
-            bl_list = res.json()
-            if isinstance(bl_list, list):
-                blacklist_set = set(str(u).lower().strip() for u in bl_list if str(u).strip())
-                print(f"[*] Retrieved {len(blacklist_set)} blacklisted channels from Cloudflare KV for permanent purge.")
-                return blacklist_set
-    except Exception as e:
-        print(f"[-] Could not fetch blacklist from Cloudflare: {e}")
-
-    return set()
-
-def get_curated_keywords():
-    """قراءة قائمة الكلمات المفتاحية للاهتمامات من ملف interests.json"""
-    kw_file = "interests.json"
-    if os.path.exists(kw_file):
-        try:
-            with open(kw_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                words = data.get("keywords", [])
-                keywords = [str(w).lower().strip() for w in words if str(w).strip()]
-                if keywords:
-                    print(f"[*] Loaded {len(keywords)} curated interest keywords from interests.json.")
-                    return keywords
-        except Exception as e:
-            print(f"[-] Could not read interests.json: {e}")
-
-    # قائمة افتراضية في حال غياب الملف
-    default_keywords = [
-        "termux", "github", "python", "script", "scripts", "mod apk", "android",
-        "linux", "api key", "free api", "f-droid", "open source", "proot", "adb",
-        "automation", "bash", "hacking", "بايثون", "ترمكس", "أندرويد", "برمجة", "سكريبت"
-    ]
-    print(f"[*] Using fallback curated keywords ({len(default_keywords)}).")
-    return default_keywords
-
-def extract_year_safely(date_val):
-    if pd.isna(date_val) or not str(date_val).strip():
-        return "unknown"
-    s = str(date_val).strip()
-    try:
-        if len(s) >= 4 and s[:4].isdigit():
-            year_num = int(s[:4])
-            if 2015 <= year_num <= 2035:
-                return str(year_num)
-        dt = pd.to_datetime(s, errors="coerce")
-        if pd.notna(dt):
-            return str(dt.year)
-    except Exception:
-        pass
-    return "unknown"
-
-def sync_channels(blacklist):
-    new_c_path = os.path.join(CRAWLER_DIR, "c.parquet")
-    new_c_df = pd.DataFrame()
-    if os.path.exists(new_c_path):
-        new_c_df = pd.read_parquet(new_c_path)
-
-    existing_c_df = pd.DataFrame()
-    try:
-        old_path = hf_hub_download(repo_id=HF_REPO_ID, filename="c.parquet", repo_type="dataset", token=HF_TOKEN)
-        existing_c_df = pd.read_parquet(old_path)
-    except Exception:
-        pass
-
-    merged_c = pd.concat([existing_c_df, new_c_df], ignore_index=True)
-    if merged_c.empty:
-        return 0, 0, 0
-
-    merged_c = merged_c.drop_duplicates(subset=["username"], keep="last")
-
-    # الحذف الفيزيائي الفعلي للقنوات المحظورة من قاعدة البيانات
-    if blacklist and "username" in merged_c.columns:
-        initial_c_count = len(merged_c)
-        merged_c = merged_c[~merged_c["username"].astype(str).str.lower().isin(blacklist)]
-        purged_c = initial_c_count - len(merged_c)
-        if purged_c > 0:
-            print(f"[🔥] Permanently purged {purged_c:,} channels from c.parquet!")
-
-    out_c_file = os.path.join(LOCAL_DIR, "c.parquet")
-    merged_c.to_parquet(out_c_file, compression="zstd", index=False)
-
-    api.upload_file(
-        path_or_fileobj=out_c_file,
-        path_in_repo="c.parquet",
-        repo_id=HF_REPO_ID,
-        repo_type="dataset",
-        commit_message=f"Sync & purge channels: {len(merged_c):,} total"
-    )
-
-    total = len(merged_c)
-    checked = merged_c["last_checked"].dropna().astype(str).str.strip().ne("").sum()
-    remaining = total - checked
-    return len(new_c_df), total, remaining
-
-def push_to_cloudflare_kv(posts_df):
-    """فلترة صارمة للمحتوى التقني الحقيقي واستبعاد السبام والمراهنات"""
-    cf_token = os.getenv("CF_API_TOKEN")
-    cf_account = os.getenv("CF_ACCOUNT_ID")
-    cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
-
-    if not (cf_token and cf_account and cf_kv_id):
-        print("[-] Skipping Cloudflare KV push: Secrets missing.")
-        return
-
-    keywords = get_curated_keywords()
-
-    # تجهيز أنماط Regex تمنع تطابق الحروف الجزئية
-    compiled_patterns = []
-    for k in keywords:
-        k_clean = k.strip().lower()
-        if not k_clean:
-            continue
-        if re.match(r'^[a-z0-9_-]+$', k_clean):
-            compiled_patterns.append(re.compile(rf'\b{re.escape(k_clean)}\b', re.IGNORECASE))
-        else:
-            compiled_patterns.append(re.compile(rf'(?:^|\s|[^\w\u0621-\u064A]){re.escape(k_clean)}(?:$|\s|[^\w\u0621-\u064A])', re.IGNORECASE))
-
-    if "date" in posts_df.columns:
-        posts_df = posts_df.sort_values(by="date", ascending=False)
-
-    def matches_strict_interest(row):
-        text = str(row.get("text", "")).lower()
-        username = str(row.get("username", "")).lower()
-
-        # 1. استبعاد فوري لأي بوست يحتوي على سبام المراهنات أو القنوات التجارية
-        if any(s in text for s in SPAM_TRIGGERS) or any(s in username for s in SPAM_TRIGGERS):
-            return False
-
-        # 2. استبعاد المتاجر والروابط الخارجية
-        if any(bad_link in text for bad_link in ["amzn.to", "myntr", "flipkart", "al-wazaif"]):
-            return False
-
-        # 3. شرط جوهري: النص نفسه يجب أن يحتوي على الكلمة التقنية وليس مجرد اسم القناة
-        has_tech_content = False
-        for pat in compiled_patterns:
-            if pat.search(text):
-                has_tech_content = True
-                break
-
-        return has_tech_content
-
-    curated_df = posts_df[posts_df.apply(matches_strict_interest, axis=1)]
-    print(f"[+] Found {len(curated_df):,} strictly matched curated posts out of {len(posts_df):,} total.")
-
-    cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
-    available_cols = [c for c in cols_to_keep if c in curated_df.columns]
-
-    latest_subset = curated_df[available_cols].head(3000).fillna("").to_dict(orient="records")
-
-    url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/latest_posts"
-    headers = {
-        "Authorization": f"Bearer {cf_token}",
-        "Content-Type": "application/json"
-    }
-
-    res = requests.put(url, headers=headers, json=latest_subset)
-    if res.status_code == 200:
-        print(f"[✓] Successfully pushed {len(latest_subset):,} CLEAN Curated posts to Cloudflare KV!")
-    else:
-        print(f"[-] Cloudflare KV sync failed: {res.text}")
-
-def sync_partitioned_posts(blacklist):
-    new_p_path = os.path.join(CRAWLER_DIR, "p.parquet")
-    new_posts_df = pd.DataFrame()
-    if os.path.exists(new_p_path):
-        new_posts_df = pd.read_parquet(new_p_path)
-
-    manifest_data = {}
-    try:
-        m_path = hf_hub_download(repo_id=HF_REPO_ID, filename="manifest.json", repo_type="dataset", token=HF_TOKEN)
-        with open(m_path, "r", encoding="utf-8") as f:
-            manifest_data = json.load(f)
-    except Exception:
-        manifest_data = {"2026": {"file": "posts_2026.parquet"}}
-
-    if not new_posts_df.empty:
-        new_posts_df["year_partition"] = new_posts_df["date"].apply(extract_year_safely)
-        for y in new_posts_df["year_partition"].unique():
-            if y not in manifest_data:
-                manifest_data[y] = {"file": f"posts_{y}.parquet"}
-
-    all_2026_df = pd.DataFrame()
-    total_posts_all_years = 0
-
-    for year, meta in manifest_data.items():
-        partition_filename = meta.get("file", f"posts_{year}.parquet")
-        existing_year_df = pd.DataFrame()
-        try:
-            year_path = hf_hub_download(repo_id=HF_REPO_ID, filename=partition_filename, repo_type="dataset", token=HF_TOKEN)
-            existing_year_df = pd.read_parquet(year_path)
-        except Exception:
-            pass
-
-        chunk_new = pd.DataFrame()
-        if not new_posts_df.empty and "year_partition" in new_posts_df.columns:
-            chunk_new = new_posts_df[new_posts_df["year_partition"] == year].drop(columns=["year_partition"], errors="ignore")
-
-        merged_year = pd.concat([existing_year_df, chunk_new], ignore_index=True)
-        if merged_year.empty:
-            continue
-
-        if "id" in merged_year.columns:
-            merged_year = merged_year.drop_duplicates(subset=["id"], keep="last")
-        else:
-            merged_year = merged_year.drop_duplicates(subset=["username", "post_id"], keep="last")
-
-        # الحذف الفيزيائي للبوستات التابعة لقنوات البلاك ليست
-        if blacklist and "username" in merged_year.columns:
-            initial_p_count = len(merged_year)
-            merged_year = merged_year[~merged_year["username"].astype(str).str.lower().isin(blacklist)]
-            purged_p = initial_p_count - len(merged_year)
-            if purged_p > 0:
-                print(f"[🔥] Permanently purged {purged_p:,} posts from {partition_filename}!")
-
-        if year == "2026":
-            all_2026_df = merged_year
-
-        local_year_file = os.path.join(LOCAL_DIR, partition_filename)
-        merged_year.to_parquet(local_year_file, compression="zstd", index=False)
-
-        api.upload_file(
-            path_or_fileobj=local_year_file,
-            path_in_repo=partition_filename,
-            repo_id=HF_REPO_ID,
-            repo_type="dataset",
-            commit_message=f"Sync & clean partition {partition_filename}: {len(merged_year):,} posts"
-        )
-
-        manifest_data[year] = {
-            "file": partition_filename,
-            "total_rows": len(merged_year),
-            "updated_at": datetime.now(timezone.utc).isoformat()
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Telegram Feed</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        /* Light Theme (Default) */
+        :root {
+            --bg-page: #f0f2f5;
+            --bg-card: #ffffff;
+            --border: #e2e8f0;
+            --primary: #0088cc;
+            --primary-hover: #0077b5;
+            --text-main: #0f172a;
+            --text-sub: #64748b;
+            --danger: #ef4444;
+            --danger-bg: #fee2e2;
+            --input-bg: #f8fafc;
+            --card-footer-bg: #f8fafc;
+            --header-bg: rgba(255, 255, 255, 0.96);
+            --avatar-bg: #e0f2fe;
+            --theme-btn-bg: #e2e8f0;
+            --theme-btn-text: #0f172a;
         }
 
-    manifest_path = os.path.join(LOCAL_DIR, "manifest.json")
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(manifest_data, f, indent=2)
+        /* Dark Theme */
+        [data-theme="dark"] {
+            --bg-page: #0b1120;
+            --bg-card: #1e293b;
+            --border: #334155;
+            --primary: #38bdf8;
+            --primary-hover: #0284c7;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+            --danger: #ef4444;
+            --danger-bg: rgba(239, 68, 68, 0.2);
+            --input-bg: #020617;
+            --card-footer-bg: rgba(0, 0, 0, 0.25);
+            --header-bg: rgba(15, 23, 42, 0.95);
+            --avatar-bg: #0369a1;
+            --theme-btn-bg: #334155;
+            --theme-btn-text: #f8fafc;
+        }
 
-    api.upload_file(
-        path_or_fileobj=manifest_path,
-        path_in_repo="manifest.json",
-        repo_id=HF_REPO_ID,
-        repo_type="dataset",
-        commit_message="Update dataset partitions manifest"
-    )
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
 
-    # تصفية ودفع المنشورات التقنية الصافية فقط لـ Cloudflare KV
-    if not all_2026_df.empty:
-        push_to_cloudflare_kv(all_2026_df)
+        body {
+            background-color: var(--bg-page);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding-bottom: 60px;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
 
-    for y in manifest_data:
-        total_posts_all_years += manifest_data[y].get("total_rows", 0)
+        header {
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            background: var(--header-bg);
+            backdrop-filter: blur(10px);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 12px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+            transition: background 0.2s ease, border-color 0.2s ease;
+        }
 
-    return len(new_posts_df), total_posts_all_years
+        .header-content {
+            max-width: 600px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
 
-def main():
-    print("\n" + "=" * 65)
-    print("🚀 بدء مزامنة ورفع وتطهير البيانات السحابية...")
-    print("=" * 65)
+        .header-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-    blacklist = get_cloudflare_blacklist()
-    c_crawled, c_total, c_remaining = sync_channels(blacklist)
-    p_crawled, p_total = sync_partitioned_posts(blacklist)
+        .admin-badge {
+            display: none;
+            font-size: 0.72rem;
+            color: #0369a1;
+            background: #e0f2fe;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+        }
 
-    c_checked = c_total - c_remaining
-    progress_pct = (c_checked / c_total * 100) if c_total > 0 else 0
+        [data-theme="dark"] .admin-badge {
+            background: #0369a1;
+            color: #e0f2fe;
+        }
 
-    print("\n" + "╔" + "═" * 63 + "╗")
-    print("║          🔥 تقرير إنجاز الجولة الحالية (Round Dashboard)       ║")
-    print("╠" + "═" * 63 + "╣")
-    print(f"║ 📥 قنوات تم فحصها وتحديثها الجولة دي : {c_crawled:,} قناة")
-    print(f"║ 💬 منشورات جديدة تم إضافتها للسحابة   : +{p_crawled:,} بوست جديد")
-    print("╠" + "═" * 63 + "╣")
-    print(f"║ 📊 إجمالي القنوات الكلي في القاعدة    : {c_total:,} قناة")
-    print(f"║ ✅ إجمالي القنوات المفحوصة حتى الآن  : {c_checked:,} قناة")
-    print(f"║ ⏳ المتبقي في الطابور للفحص           : {c_remaining:,} قناة")
-    print(f"║ 📈 نسبة إنجاز الطابور الكلي          : {progress_pct:.2f}%")
-    print(f"║ 📚 إجمالي المنشورات الكلي في السحابة  : {p_total:,} بوست")
-    print("╚" + "═" * 63 + "╝\n")
+        .theme-toggle-btn {
+            background: var(--theme-btn-bg);
+            color: var(--theme-btn-text);
+            border: none;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: auto;
+            transition: all 0.2s;
+        }
 
-if __name__ == "__main__":
-    main()
+        .search-box-wrap {
+            display: flex;
+            gap: 6px;
+        }
+
+        .search-box-wrap input {
+            flex: 1;
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            padding: 7px 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .search-box-wrap input:focus {
+            border-color: var(--primary);
+        }
+
+        .search-box-wrap button {
+            background: var(--primary);
+            color: #ffffff;
+            border: none;
+            padding: 0 16px;
+            border-radius: 8px;
+            font-weight: 700;
+            font-size: 0.88rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .search-box-wrap button:hover {
+            background: var(--primary-hover);
+        }
+
+        .feed-container {
+            max-width: 600px;
+            margin: 10px auto;
+            padding: 0 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .channel-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .channel-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: var(--avatar-bg);
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+
+        [data-theme="dark"] .channel-avatar {
+            color: #f8fafc;
+        }
+
+        .author-text {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .channel-name {
+            color: var(--text-main);
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.95rem;
+        }
+
+        .post-time {
+            color: var(--text-sub);
+            font-size: 0.75rem;
+            margin-top: 2px;
+        }
+
+        .btn-trash {
+            background: transparent;
+            border: none;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-sub);
+            transition: all 0.2s;
+        }
+
+        .btn-trash:hover {
+            background: var(--danger-bg);
+            color: var(--danger);
+        }
+
+        .btn-trash svg {
+            width: 18px;
+            height: 18px;
+            fill: currentColor;
+        }
+
+        .media-container {
+            width: 100%;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .media-container img {
+            width: 100%;
+            max-height: 480px;
+            object-fit: contain;
+            display: block;
+        }
+
+        .media-container iframe {
+            width: 100%;
+            min-height: 350px;
+            border: none;
+            background: #000;
+        }
+
+        .card-body {
+            padding: 14px;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            word-break: break-word;
+            white-space: pre-wrap;
+            color: var(--text-main);
+        }
+
+        .card-body a {
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .card-body a:hover {
+            text-decoration: underline;
+        }
+
+        .btn-toggle-more {
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 0.88rem;
+            cursor: pointer;
+            padding: 4px 0 0;
+            display: inline-block;
+        }
+
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: var(--card-footer-bg);
+            border-top: 1px solid var(--border);
+            font-size: 0.82rem;
+            color: var(--text-sub);
+        }
+
+        .card-footer a {
+            color: var(--primary);
+            text-decoration: none;
+            font-weight: 600;
+        }
+
+        .status-box {
+            text-align: center;
+            padding: 20px 10px;
+            color: var(--text-sub);
+            font-size: 0.9rem;
+        }
+
+        .spinner {
+            width: 22px;
+            height: 22px;
+            border: 3px solid var(--border);
+            border-top: 3px solid var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-content">
+            <div class="header-top-row">
+                <span class="admin-badge" id="adminBadge">🛡️ Admin Mode</span>
+                <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()">
+                    🌙 Dark
+                </button>
+            </div>
+            <div class="search-box-wrap">
+                <input type="text" id="searchInput" placeholder="Search posts..." onkeypress="if(event.key === 'Enter') triggerSearch()">
+                <button onclick="triggerSearch()">Search</button>
+            </div>
+        </div>
+    </header>
+
+    <main class="feed-container" id="feed"></main>
+
+    <div class="status-box" id="statusBox">
+        <div class="spinner"></div>
+        Loading posts...
+    </div>
+
+    <script>
+        const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
+        
+        // Admin verification
+        const SECRET_KEY = "admin2026";
+        const urlParams = new URLSearchParams(window.location.search);
+        let isAdmin = (urlParams.get("admin") === SECRET_KEY) || (sessionStorage.getItem("is_admin") === "true");
+        if (urlParams.get("admin") === SECRET_KEY) {
+            sessionStorage.setItem("is_admin", "true");
+        }
+
+        if (isAdmin) {
+            document.getElementById("adminBadge").style.display = "inline-block";
+        }
+
+        // Theme Switcher (Default: Light)
+        function initTheme() {
+            const savedTheme = localStorage.getItem("app_theme") || "light";
+            document.documentElement.setAttribute("data-theme", savedTheme);
+            updateThemeButton(savedTheme);
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
+            const nextTheme = currentTheme === "light" ? "dark" : "light";
+            document.documentElement.setAttribute("data-theme", nextTheme);
+            localStorage.setItem("app_theme", nextTheme);
+            updateThemeButton(nextTheme);
+        }
+
+        function updateThemeButton(theme) {
+            const btn = document.getElementById("themeToggleBtn");
+            if (theme === "dark") {
+                btn.innerHTML = "☀️ Light";
+            } else {
+                btn.innerHTML = "🌙 Dark";
+            }
+        }
+
+        initTheme();
+
+        let currentPage = 1;
+        let isFetching = false;
+        let hasMore = true;
+        let activeQuery = "";
+
+        function getRandomStartPage() {
+            return Math.floor(Math.random() * 25) + 1;
+        }
+
+        async function fetchFeed(isReset = false) {
+            if (isFetching || (!hasMore && !isReset)) return;
+            isFetching = true;
+
+            const statusEl = document.getElementById("statusBox");
+            statusEl.style.display = "block";
+
+            if (isReset) {
+                currentPage = activeQuery.trim() ? 1 : getRandomStartPage();
+                hasMore = true;
+                document.getElementById("feed").innerHTML = "";
+            }
+
+            try {
+                const url = `${API_BASE}/api/feed?page=${currentPage}&q=${encodeURIComponent(activeQuery)}`;
+                const res = await fetch(url);
+                const data = await res.json();
+
+                if (data.posts && data.posts.length > 0) {
+                    renderPosts(data.posts);
+                    currentPage++;
+                    hasMore = data.has_more;
+                } else if (isReset) {
+                    if (!activeQuery.trim() && currentPage > 1) {
+                        currentPage = 1;
+                        isFetching = false;
+                        return fetchFeed(true);
+                    }
+                    document.getElementById("feed").innerHTML = '<div class="status-box">No matching posts found.</div>';
+                }
+
+                if (!hasMore) {
+                    statusEl.innerText = "You have reached the end of the feed";
+                } else {
+                    statusEl.style.display = "none";
+                }
+            } catch (err) {
+                console.error("Fetch error:", err);
+                statusEl.innerText = "Failed to connect to the server. Please try again.";
+            } finally {
+                isFetching = false;
+            }
+        }
+
+        function renderPosts(posts) {
+            const feed = document.getElementById("feed");
+
+            posts.forEach(p => {
+                const card = document.createElement("article");
+                card.className = "card";
+                card.setAttribute("data-username", p.username.toLowerCase());
+
+                let mediaHtml = "";
+                const isVideo = p.media_type === "video" || (p.video && p.video.trim() !== "");
+
+                if (isVideo) {
+                    mediaHtml = `
+                        <div class="media-container">
+                            <iframe src="https://t.me/${p.username}/${p.post_id}?embed=1" allowfullscreen></iframe>
+                        </div>
+                    `;
+                } else if (p.image && p.image.trim() !== "") {
+                    mediaHtml = `
+                        <div class="media-container">
+                            <img src="${p.image}" loading="lazy" onerror="this.parentElement.style.display='none'">
+                        </div>
+                    `;
+                }
+
+                const postTime = p.date ? p.date.replace("T", " ").substring(0, 16) : "";
+                const viewsCount = Number(p.views || 0).toLocaleString();
+
+                const trashBtnHtml = isAdmin ? `
+                    <button class="btn-trash" title="Permanently delete channel" onclick="purgeChannel('${p.username}')">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                        </svg>
+                    </button>
+                ` : '';
+
+                const fullRawText = p.text || "";
+                let bodyHtml = "";
+
+                if (fullRawText.length > 250) {
+                    const shortText = fullRawText.substring(0, 250) + "...";
+                    bodyHtml = `
+                        <span class="text-preview">${formatBody(shortText)}</span>
+                        <span class="text-full" style="display: none;">${formatBody(fullRawText)}</span>
+                        <br>
+                        <button class="btn-toggle-more" onclick="toggleReadMore(this)">Show more...</button>
+                    `;
+                } else {
+                    bodyHtml = formatBody(fullRawText);
+                }
+
+                card.innerHTML = `
+                    <div class="card-header">
+                        <div class="channel-info">
+                            <div class="channel-avatar">${(p.username || "T")[0].toUpperCase()}</div>
+                            <div class="author-text">
+                                <a href="https://t.me/${p.username}" target="_blank" class="channel-name">@${p.username}</a>
+                                <span class="post-time">${postTime}</span>
+                            </div>
+                        </div>
+                        ${trashBtnHtml}
+                    </div>
+                    ${mediaHtml}
+                    <div class="card-body">${bodyHtml}</div>
+                    <div class="card-footer">
+                        <span>👁️ ${viewsCount} views</span>
+                        <a href="https://t.me/${p.username}/${p.post_id}" target="_blank">Open on Telegram ↗</a>
+                    </div>
+                `;
+                feed.appendChild(card);
+            });
+        }
+
+        window.toggleReadMore = function(btn) {
+            const cardBody = btn.parentElement;
+            const previewEl = cardBody.querySelector(".text-preview");
+            const fullEl = cardBody.querySelector(".text-full");
+
+            if (fullEl.style.display === "none") {
+                fullEl.style.display = "inline";
+                previewEl.style.display = "none";
+                btn.innerText = "Show less";
+            } else {
+                fullEl.style.display = "none";
+                previewEl.style.display = "inline";
+                btn.innerText = "Show more...";
+            }
+        };
+
+        function formatBody(str) {
+            if (!str) return "";
+            return str.replace(/(https?:\/\/[^\s]+)/g, url => `<a href="${url}" target="_blank">${url}</a>`);
+        }
+
+        async function purgeChannel(username) {
+            if (!isAdmin) return;
+
+            const cards = document.querySelectorAll(`[data-username="${username.toLowerCase()}"]`);
+            cards.forEach(c => {
+                c.style.transform = 'scale(0.95)';
+                c.style.opacity = '0';
+            });
+            setTimeout(() => cards.forEach(c => c.remove()), 300);
+
+            try {
+                await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(username)}`, { method: "POST" });
+            } catch (e) {
+                console.error("Purge error:", e);
+            }
+        }
+
+        function triggerSearch() {
+            activeQuery = document.getElementById("searchInput").value;
+            fetchFeed(true);
+        }
+
+        window.addEventListener("scroll", () => {
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
+                if (!isFetching && hasMore) fetchFeed(false);
+            }
+        });
+
+        window.addEventListener("DOMContentLoaded", () => fetchFeed(true));
+    </script>
+</body>
+</html>
