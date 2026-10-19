@@ -220,7 +220,6 @@
             text-decoration: none;
         }
 
-        /* تنسيق زر عرض المزيد */
         .btn-toggle-more {
             background: transparent;
             border: none;
@@ -293,35 +292,24 @@
     <script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
         
-        // 🔐 الـ SHA-256 Hash المشفر لكلمة سر الأدمن "admin2026" لحمايتها من الظهور في كود الصفحة
-        const ADMIN_HASH = "d16c5b9671d15db53047d7c67c5bf183f064894e63711311029415c1d8174488";
+        // فحص فوري ومباشر للأدمن بدون تأخير
+        const SECRET_KEY = "admin2026";
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        // التحقق من الرابط أو الجلسة المحفوظة
+        let isAdmin = (urlParams.get("admin") === SECRET_KEY) || (sessionStorage.getItem("is_admin") === "true");
+        if (urlParams.get("admin") === SECRET_KEY) {
+            sessionStorage.setItem("is_admin", "true");
+        }
 
-        let isAdmin = false;
+        if (isAdmin) {
+            document.getElementById("adminBadge").style.display = "inline-block";
+        }
+
         let currentPage = 1;
         let isFetching = false;
         let hasMore = true;
         let activeQuery = "";
-
-        // دالة تشفير النصوص إلى SHA-256
-        async function sha256(message) {
-            const msgBuffer = new TextEncoder().encode(message);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        }
-
-        // فحص الباسورد السري المدخل في الرابط
-        async function checkAdminStatus() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const inputPass = urlParams.get("admin");
-            if (inputPass) {
-                const computed = await sha256(inputPass.trim());
-                if (computed === ADMIN_HASH) {
-                    isAdmin = true;
-                    document.getElementById("adminBadge").style.display = "inline-block";
-                }
-            }
-        }
 
         function getRandomStartPage() {
             return Math.floor(Math.random() * 25) + 1;
@@ -399,6 +387,7 @@
                 const postTime = p.date ? p.date.replace("T", " ").substring(0, 16) : "";
                 const viewsCount = Number(p.views || 0).toLocaleString();
 
+                // يظهر زر الحذف فوراً وبشكل حتمي للأدمن
                 const trashBtnHtml = isAdmin ? `
                     <button class="btn-trash" title="حذف القناة للأبد" onclick="purgeChannel('${p.username}')">
                         <svg viewBox="0 0 24 24">
@@ -407,7 +396,6 @@
                     </button>
                 ` : '';
 
-                // معالجة خاصية قراءة المزيد إذا تجاوز النص 250 حرفاً
                 const fullRawText = p.text || "";
                 let bodyHtml = "";
 
@@ -445,7 +433,6 @@
             });
         }
 
-        // دالة التبديل بين عرض المزيد وعرض أقل
         window.toggleReadMore = function(btn) {
             const cardBody = btn.parentElement;
             const previewEl = cardBody.querySelector(".text-preview");
@@ -495,10 +482,7 @@
             }
         });
 
-        window.addEventListener("DOMContentLoaded", async () => {
-            await checkAdminStatus();
-            fetchFeed(true);
-        });
+        window.addEventListener("DOMContentLoaded", () => fetchFeed(true));
     </script>
 </body>
 </html>
