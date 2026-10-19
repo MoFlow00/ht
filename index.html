@@ -1,28 +1,55 @@
 <!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<html lang="en" dir="ltr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>تليجرام فيد</title>
+    <title>Telegram Feed</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
+        /* Light Theme (Default) */
         :root {
             --bg-page: #f0f2f5;
             --bg-card: #ffffff;
             --border: #e2e8f0;
             --primary: #0088cc;
+            --primary-hover: #0077b5;
             --text-main: #0f172a;
             --text-sub: #64748b;
             --danger: #ef4444;
             --danger-bg: #fee2e2;
+            --input-bg: #f8fafc;
+            --card-footer-bg: #f8fafc;
+            --header-bg: rgba(255, 255, 255, 0.96);
+            --avatar-bg: #e0f2fe;
+            --theme-btn-bg: #e2e8f0;
+            --theme-btn-text: #0f172a;
+        }
+
+        /* Dark Theme */
+        [data-theme="dark"] {
+            --bg-page: #0b1120;
+            --bg-card: #1e293b;
+            --border: #334155;
+            --primary: #38bdf8;
+            --primary-hover: #0284c7;
+            --text-main: #f8fafc;
+            --text-sub: #94a3b8;
+            --danger: #ef4444;
+            --danger-bg: rgba(239, 68, 68, 0.2);
+            --input-bg: #020617;
+            --card-footer-bg: rgba(0, 0, 0, 0.25);
+            --header-bg: rgba(15, 23, 42, 0.95);
+            --avatar-bg: #0369a1;
+            --theme-btn-bg: #334155;
+            --theme-btn-text: #f8fafc;
         }
 
         * {
             box-sizing: border-box;
             margin: 0;
             padding: 0;
-            font-family: 'Cairo', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
             -webkit-tap-highlight-color: transparent;
         }
 
@@ -31,17 +58,19 @@
             color: var(--text-main);
             min-height: 100vh;
             padding-bottom: 60px;
+            transition: background-color 0.2s ease, color 0.2s ease;
         }
 
         header {
             position: sticky;
             top: 0;
             z-index: 1000;
-            background: rgba(255, 255, 255, 0.96);
+            background: var(--header-bg);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid var(--border);
             padding: 8px 12px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+            transition: background 0.2s ease, border-color 0.2s ease;
         }
 
         .header-content {
@@ -52,6 +81,12 @@
             gap: 6px;
         }
 
+        .header-top-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
         .admin-badge {
             display: none;
             font-size: 0.72rem;
@@ -60,7 +95,27 @@
             padding: 2px 8px;
             border-radius: 4px;
             font-weight: 700;
-            align-self: flex-start;
+        }
+
+        [data-theme="dark"] .admin-badge {
+            background: #0369a1;
+            color: #e0f2fe;
+        }
+
+        .theme-toggle-btn {
+            background: var(--theme-btn-bg);
+            color: var(--theme-btn-text);
+            border: none;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-left: auto;
+            transition: all 0.2s;
         }
 
         .search-box-wrap {
@@ -70,13 +125,14 @@
 
         .search-box-wrap input {
             flex: 1;
-            background: #f8fafc;
+            background: var(--input-bg);
             border: 1px solid var(--border);
             color: var(--text-main);
             padding: 7px 12px;
             border-radius: 8px;
             font-size: 0.9rem;
             outline: none;
+            transition: border-color 0.2s ease;
         }
 
         .search-box-wrap input:focus {
@@ -92,6 +148,11 @@
             font-weight: 700;
             font-size: 0.88rem;
             cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .search-box-wrap button:hover {
+            background: var(--primary-hover);
         }
 
         .feed-container {
@@ -119,7 +180,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 10px 14px;
-            border-bottom: 1px solid #f1f5f9;
+            border-bottom: 1px solid var(--border);
         }
 
         .channel-info {
@@ -132,13 +193,17 @@
             width: 36px;
             height: 36px;
             border-radius: 50%;
-            background: #e0f2fe;
+            background: var(--avatar-bg);
             color: var(--primary);
             display: flex;
             align-items: center;
             justify-content: center;
             font-weight: 700;
             font-size: 0.95rem;
+        }
+
+        [data-theme="dark"] .channel-avatar {
+            color: #f8fafc;
         }
 
         .author-text {
@@ -156,8 +221,7 @@
         .post-time {
             color: var(--text-sub);
             font-size: 0.75rem;
-            direction: ltr;
-            text-align: right;
+            margin-top: 2px;
         }
 
         .btn-trash {
@@ -213,11 +277,16 @@
             line-height: 1.6;
             word-break: break-word;
             white-space: pre-wrap;
+            color: var(--text-main);
         }
 
         .card-body a {
             color: var(--primary);
             text-decoration: none;
+        }
+
+        .card-body a:hover {
+            text-decoration: underline;
         }
 
         .btn-toggle-more {
@@ -236,8 +305,8 @@
             justify-content: space-between;
             align-items: center;
             padding: 10px 14px;
-            background: #f8fafc;
-            border-top: 1px solid #f1f5f9;
+            background: var(--card-footer-bg);
+            border-top: 1px solid var(--border);
             font-size: 0.82rem;
             color: var(--text-sub);
         }
@@ -274,10 +343,15 @@
 
     <header>
         <div class="header-content">
-            <span class="admin-badge" id="adminBadge">🛡️ وضع الإدارة (مفعل)</span>
+            <div class="header-top-row">
+                <span class="admin-badge" id="adminBadge">🛡️ Admin Mode</span>
+                <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()">
+                    🌙 Dark
+                </button>
+            </div>
             <div class="search-box-wrap">
-                <input type="text" id="searchInput" placeholder="بحث سريع في المنشورات..." onkeypress="if(event.key === 'Enter') triggerSearch()">
-                <button onclick="triggerSearch()">بحث</button>
+                <input type="text" id="searchInput" placeholder="Search posts..." onkeypress="if(event.key === 'Enter') triggerSearch()">
+                <button onclick="triggerSearch()">Search</button>
             </div>
         </div>
     </header>
@@ -286,17 +360,15 @@
 
     <div class="status-box" id="statusBox">
         <div class="spinner"></div>
-        جلب المنشورات...
+        Loading posts...
     </div>
 
     <script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
         
-        // فحص فوري ومباشر للأدمن بدون تأخير
+        // Admin verification
         const SECRET_KEY = "admin2026";
         const urlParams = new URLSearchParams(window.location.search);
-        
-        // التحقق من الرابط أو الجلسة المحفوظة
         let isAdmin = (urlParams.get("admin") === SECRET_KEY) || (sessionStorage.getItem("is_admin") === "true");
         if (urlParams.get("admin") === SECRET_KEY) {
             sessionStorage.setItem("is_admin", "true");
@@ -305,6 +377,32 @@
         if (isAdmin) {
             document.getElementById("adminBadge").style.display = "inline-block";
         }
+
+        // Theme Switcher (Default: Light)
+        function initTheme() {
+            const savedTheme = localStorage.getItem("app_theme") || "light";
+            document.documentElement.setAttribute("data-theme", savedTheme);
+            updateThemeButton(savedTheme);
+        }
+
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute("data-theme") || "light";
+            const nextTheme = currentTheme === "light" ? "dark" : "light";
+            document.documentElement.setAttribute("data-theme", nextTheme);
+            localStorage.setItem("app_theme", nextTheme);
+            updateThemeButton(nextTheme);
+        }
+
+        function updateThemeButton(theme) {
+            const btn = document.getElementById("themeToggleBtn");
+            if (theme === "dark") {
+                btn.innerHTML = "☀️ Light";
+            } else {
+                btn.innerHTML = "🌙 Dark";
+            }
+        }
+
+        initTheme();
 
         let currentPage = 1;
         let isFetching = false;
@@ -343,17 +441,17 @@
                         isFetching = false;
                         return fetchFeed(true);
                     }
-                    document.getElementById("feed").innerHTML = '<div class="status-box">لا توجد منشورات مطابقة.</div>';
+                    document.getElementById("feed").innerHTML = '<div class="status-box">No matching posts found.</div>';
                 }
 
                 if (!hasMore) {
-                    statusEl.innerText = "وصلت لنهاية الخلاصة";
+                    statusEl.innerText = "You have reached the end of the feed";
                 } else {
                     statusEl.style.display = "none";
                 }
             } catch (err) {
                 console.error("Fetch error:", err);
-                statusEl.innerText = "تعذر الاتصال بالسيرفر. يرجى المحاولة لاحقاً.";
+                statusEl.innerText = "Failed to connect to the server. Please try again.";
             } finally {
                 isFetching = false;
             }
@@ -387,9 +485,8 @@
                 const postTime = p.date ? p.date.replace("T", " ").substring(0, 16) : "";
                 const viewsCount = Number(p.views || 0).toLocaleString();
 
-                // يظهر زر الحذف فوراً وبشكل حتمي للأدمن
                 const trashBtnHtml = isAdmin ? `
-                    <button class="btn-trash" title="حذف القناة للأبد" onclick="purgeChannel('${p.username}')">
+                    <button class="btn-trash" title="Permanently delete channel" onclick="purgeChannel('${p.username}')">
                         <svg viewBox="0 0 24 24">
                             <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
                         </svg>
@@ -405,7 +502,7 @@
                         <span class="text-preview">${formatBody(shortText)}</span>
                         <span class="text-full" style="display: none;">${formatBody(fullRawText)}</span>
                         <br>
-                        <button class="btn-toggle-more" onclick="toggleReadMore(this)">عرض المزيد...</button>
+                        <button class="btn-toggle-more" onclick="toggleReadMore(this)">Show more...</button>
                     `;
                 } else {
                     bodyHtml = formatBody(fullRawText);
@@ -425,8 +522,8 @@
                     ${mediaHtml}
                     <div class="card-body">${bodyHtml}</div>
                     <div class="card-footer">
-                        <span>👁️ ${viewsCount} مشاهدة</span>
-                        <a href="https://t.me/${p.username}/${p.post_id}" target="_blank">فتح في تليجرام ↗</a>
+                        <span>👁️ ${viewsCount} views</span>
+                        <a href="https://t.me/${p.username}/${p.post_id}" target="_blank">Open on Telegram ↗</a>
                     </div>
                 `;
                 feed.appendChild(card);
@@ -441,11 +538,11 @@
             if (fullEl.style.display === "none") {
                 fullEl.style.display = "inline";
                 previewEl.style.display = "none";
-                btn.innerText = "عرض أقل";
+                btn.innerText = "Show less";
             } else {
                 fullEl.style.display = "none";
                 previewEl.style.display = "inline";
-                btn.innerText = "عرض المزيد...";
+                btn.innerText = "Show more...";
             }
         };
 
