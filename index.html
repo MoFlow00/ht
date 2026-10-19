@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Telegram Feed</title>
+    <title>تليجرام فيد</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -33,7 +33,6 @@
             padding-bottom: 60px;
         }
 
-        /* شريط بحث خفيف وأنيق بدون زحمة */
         header {
             position: sticky;
             top: 0;
@@ -45,9 +44,26 @@
             box-shadow: 0 1px 3px rgba(0,0,0,0.04);
         }
 
-        .search-box-wrap {
+        .header-content {
             max-width: 600px;
             margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .admin-badge {
+            display: none;
+            font-size: 0.72rem;
+            color: #0369a1;
+            background: #e0f2fe;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-weight: 700;
+            align-self: flex-start;
+        }
+
+        .search-box-wrap {
             display: flex;
             gap: 6px;
         }
@@ -155,6 +171,7 @@
             align-items: center;
             justify-content: center;
             color: var(--text-sub);
+            transition: all 0.2s;
         }
 
         .btn-trash:hover {
@@ -203,6 +220,18 @@
             text-decoration: none;
         }
 
+        /* تنسيق زر عرض المزيد */
+        .btn-toggle-more {
+            background: transparent;
+            border: none;
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 0.88rem;
+            cursor: pointer;
+            padding: 4px 0 0;
+            display: inline-block;
+        }
+
         .card-footer {
             display: flex;
             justify-content: space-between;
@@ -245,9 +274,12 @@
 <body>
 
     <header>
-        <div class="search-box-wrap">
-            <input type="text" id="searchInput" placeholder="بحث سريع في المنشورات..." onkeypress="if(event.key === 'Enter') triggerSearch()">
-            <button onclick="triggerSearch()">Search</button>
+        <div class="header-content">
+            <span class="admin-badge" id="adminBadge">🛡️ وضع الإدارة (مفعل)</span>
+            <div class="search-box-wrap">
+                <input type="text" id="searchInput" placeholder="بحث سريع في المنشورات..." onkeypress="if(event.key === 'Enter') triggerSearch()">
+                <button onclick="triggerSearch()">بحث</button>
+            </div>
         </div>
     </header>
 
@@ -255,20 +287,43 @@
 
     <div class="status-box" id="statusBox">
         <div class="spinner"></div>
-       Loading...
+        جلب المنشورات...
     </div>
 
     <script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
+        
+        // 🔐 الـ SHA-256 Hash المشفر لكلمة سر الأدمن "admin2026" لحمايتها من الظهور في كود الصفحة
+        const ADMIN_HASH = "d16c5b9671d15db53047d7c67c5bf183f064894e63711311029415c1d8174488";
 
+        let isAdmin = false;
         let currentPage = 1;
         let isFetching = false;
         let hasMore = true;
         let activeQuery = "";
 
-        // دالة توليد رقم صفحة عشوائي عند الـ Refresh لعرض بوستات متجددة
+        // دالة تشفير النصوص إلى SHA-256
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        // فحص الباسورد السري المدخل في الرابط
+        async function checkAdminStatus() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const inputPass = urlParams.get("admin");
+            if (inputPass) {
+                const computed = await sha256(inputPass.trim());
+                if (computed === ADMIN_HASH) {
+                    isAdmin = true;
+                    document.getElementById("adminBadge").style.display = "inline-block";
+                }
+            }
+        }
+
         function getRandomStartPage() {
-            // اختيار صفحة عشوائية بين 1 و 30 في الـ 3000 بوست المخزنين
             return Math.floor(Math.random() * 25) + 1;
         }
 
@@ -280,7 +335,6 @@
             statusEl.style.display = "block";
 
             if (isReset) {
-                // إذا كان المستخدم يبحث، يبدأ من صفحة 1؛ لو تصفح عادي، يختار نقطة بداية عشوائية
                 currentPage = activeQuery.trim() ? 1 : getRandomStartPage();
                 hasMore = true;
                 document.getElementById("feed").innerHTML = "";
@@ -296,7 +350,6 @@
                     currentPage++;
                     hasMore = data.has_more;
                 } else if (isReset) {
-                    // لو الصفحة العشوائية صادفت نهاية الأرشيف، نرجع لصفحة 1 فوراً
                     if (!activeQuery.trim() && currentPage > 1) {
                         currentPage = 1;
                         isFetching = false;
@@ -346,6 +399,30 @@
                 const postTime = p.date ? p.date.replace("T", " ").substring(0, 16) : "";
                 const viewsCount = Number(p.views || 0).toLocaleString();
 
+                const trashBtnHtml = isAdmin ? `
+                    <button class="btn-trash" title="حذف القناة للأبد" onclick="purgeChannel('${p.username}')">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                        </svg>
+                    </button>
+                ` : '';
+
+                // معالجة خاصية قراءة المزيد إذا تجاوز النص 250 حرفاً
+                const fullRawText = p.text || "";
+                let bodyHtml = "";
+
+                if (fullRawText.length > 250) {
+                    const shortText = fullRawText.substring(0, 250) + "...";
+                    bodyHtml = `
+                        <span class="text-preview">${formatBody(shortText)}</span>
+                        <span class="text-full" style="display: none;">${formatBody(fullRawText)}</span>
+                        <br>
+                        <button class="btn-toggle-more" onclick="toggleReadMore(this)">عرض المزيد...</button>
+                    `;
+                } else {
+                    bodyHtml = formatBody(fullRawText);
+                }
+
                 card.innerHTML = `
                     <div class="card-header">
                         <div class="channel-info">
@@ -355,22 +432,35 @@
                                 <span class="post-time">${postTime}</span>
                             </div>
                         </div>
-                        <button class="btn-trash" title="حذف القناة للأبد" onclick="purgeChannel('${p.username}')">
-                            <svg viewBox="0 0 24 24">
-                                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                            </svg>
-                        </button>
+                        ${trashBtnHtml}
                     </div>
                     ${mediaHtml}
-                    <div class="card-body">${formatBody(p.text || "")}</div>
+                    <div class="card-body">${bodyHtml}</div>
                     <div class="card-footer">
                         <span>👁️ ${viewsCount} مشاهدة</span>
-                        <a href="https://t.me/${p.username}/${p.post_id}" target="_blank">Telegram ↗</a>
+                        <a href="https://t.me/${p.username}/${p.post_id}" target="_blank">فتح في تليجرام ↗</a>
                     </div>
                 `;
                 feed.appendChild(card);
             });
         }
+
+        // دالة التبديل بين عرض المزيد وعرض أقل
+        window.toggleReadMore = function(btn) {
+            const cardBody = btn.parentElement;
+            const previewEl = cardBody.querySelector(".text-preview");
+            const fullEl = cardBody.querySelector(".text-full");
+
+            if (fullEl.style.display === "none") {
+                fullEl.style.display = "inline";
+                previewEl.style.display = "none";
+                btn.innerText = "عرض أقل";
+            } else {
+                fullEl.style.display = "none";
+                previewEl.style.display = "inline";
+                btn.innerText = "عرض المزيد...";
+            }
+        };
 
         function formatBody(str) {
             if (!str) return "";
@@ -378,6 +468,8 @@
         }
 
         async function purgeChannel(username) {
+            if (!isAdmin) return;
+
             const cards = document.querySelectorAll(`[data-username="${username.toLowerCase()}"]`);
             cards.forEach(c => {
                 c.style.transform = 'scale(0.95)';
@@ -403,7 +495,10 @@
             }
         });
 
-        window.addEventListener("DOMContentLoaded", () => fetchFeed(true));
+        window.addEventListener("DOMContentLoaded", async () => {
+            await checkAdminStatus();
+            fetchFeed(true);
+        });
     </script>
 </body>
 </html>
