@@ -15,6 +15,13 @@ CRAWLER_DIR = "crawler_output"
 os.makedirs(LOCAL_DIR, exist_ok=True)
 api = HfApi(token=HF_TOKEN)
 
+# قائمة الحظر الصارم والفوري لإعلانات القمار والسبام الهندي والمتاجر
+HARD_SPAM_BLOCKLIST = [
+    "₹", "yono", "rummy", "bhailog", "bhai", "loot", "win cash",
+    "t.me/+", "t.me/joinchat", "bonus upto", "free paytm", "1xbet",
+    "betwinner", "melbet", "casino", "poker", "addlist/"
+]
+
 def get_cloudflare_blacklist():
     """جلب قائمة القنوات المحظورة مركزياً من Cloudflare KV لتطهيرها نهائياً"""
     cf_token = os.getenv("CF_API_TOKEN")
@@ -122,7 +129,7 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def push_to_cloudflare_kv(posts_df):
-    """الفلترة الحصرية بمطابقة الكلمة كاملة ومستقلة تماماً كما هي في interests.json"""
+    """فلترة صارمة: طرد السبام والقمار أولاً ثم مطابقة كلمات interests.json فقط"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -136,38 +143,45 @@ def push_to_cloudflare_kv(posts_df):
         print("[-] No keywords loaded from interests.json.")
         return
 
-    # بناء Regex دقيق وسليم بدون أخطاء أسطر
+    # بناء Regex دقيق يضمن مطابقة الكلمة المستقلة فقط
     compiled_patterns = []
     for k in keywords:
         k_clean = k.strip().lower()
         if not k_clean:
             continue
-        
-        # للكلمات الإنجليزية: مطابقة الكلمة مستقلة بذاتها فقط
         if re.match(r'^[a-z0-9_-]+$', k_clean):
             pattern = re.compile(rf'(?<![a-zA-Z0-9_]){re.escape(k_clean)}(?![a-zA-Z0-9_])', re.IGNORECASE)
         else:
-            # للكلمات العربية: مطابقة الكلمة مستقلة ومحاطة بمسافات أو علامات ترقيم
             pattern = re.compile(rf'(?<![\w\u0621-\u064A]){re.escape(k_clean)}(?![\w\u0621-\u064A])', re.IGNORECASE)
-            
         compiled_patterns.append(pattern)
 
     if "date" in posts_df.columns:
         posts_df = posts_df.sort_values(by="date", ascending=False)
 
-    # الفحص داخل نص المنشور فقط وليس اسم القناة لضمان عدم مرور قنوات مثل hqswmod
-    def matches_exact_word_in_text(row):
-        text = str(row.get("text", "")).strip()
-        if not text or text.lower() == "nan":
+    def matches_clean_tech_only(row):
+        text = str(row.get("text", "")).strip().lower()
+        username = str(row.get("username", "")).strip().lower()
+
+        if not text or text == "nan":
             return False
 
+        # 1. طرد فوري لأي نصوص تحتوي على رموز صينية أو آسيوية
+        if re.search(r'[\u4e00-\u9fff]', text):
+            return False
+
+        # 2. طرد فوري إذا احتوى المنشور على علامات القمار، الروبية الهندية أو روابط الدعوة المشبوهة
+        if any(bad in text for bad in HARD_SPAM_BLOCKLIST) or any(bad in username for bad in HARD_SPAM_BLOCKLIST):
+            return False
+
+        # 3. الفحص الإيجابي الحصري: النص نفسه يجب أن يحتوي على كلمة مطابقة من interests.json
         for pat in compiled_patterns:
             if pat.search(text):
                 return True
+
         return False
 
-    curated_df = posts_df[posts_df.apply(matches_exact_word_in_text, axis=1)]
-    print(f"[+] Found {len(curated_df):,} posts matching your EXACT whole words in interests.json (out of {len(posts_df):,} total).")
+    curated_df = posts_df[posts_df.apply(matches_clean_tech_only, axis=1)]
+    print(f"[+] Found {len(curated_df):,} CLEAN posts strictly matching your JSON (out of {len(posts_df):,} total).")
 
     cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
     available_cols = [c for c in cols_to_keep if c in curated_df.columns]
@@ -182,7 +196,7 @@ def push_to_cloudflare_kv(posts_df):
 
     res = requests.put(url, headers=headers, json=latest_subset)
     if res.status_code == 200:
-        print(f"[✓] Successfully pushed {len(latest_subset):,} posts to Cloudflare KV matching exact keywords only!")
+        print(f"[✓] Successfully pushed {len(latest_subset):,} clean posts to Cloudflare KV!")
     else:
         print(f"[-] Cloudflare KV sync failed: {res.text}")
 
@@ -271,7 +285,7 @@ def sync_partitioned_posts(blacklist):
         commit_message="Update dataset partitions manifest"
     )
 
-    # دفع المنشورات المفلترة الصافية لـ Cloudflare KV
+    # دفع المنشورات النقية الصافية فقط لـ Cloudflare KV
     if not all_2026_df.empty:
         push_to_cloudflare_kv(all_2026_df)
 
