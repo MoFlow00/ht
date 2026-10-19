@@ -15,11 +15,12 @@ CRAWLER_DIR = "crawler_output"
 os.makedirs(LOCAL_DIR, exist_ok=True)
 api = HfApi(token=HF_TOKEN)
 
-# قائمة حظر صريحة لحسابات ومواقع العروض والصفقات والمتاجر
-COMMERCIAL_SPAM = [
-    "shopping", "deals", "amazon", "amzn", "flipkart", "discount", "promo",
-    "coupon", "myntra", "price drop", "loot", "cashback", "sale", "store",
-    "jobsinuae", "wazaif", "وظائف", "فرصة عمل", "شواغر"
+# قائمة استبعاد صريحة للإعلانات والمراهنات والسبام الهندي والمتاجر
+SPAM_TRIGGERS = [
+    "yono", "bonus", "rummy", "earning", "₹", "bhailog", "bhai", "win cash",
+    "refer", "loot", "t.me/+", "joinchat", "shopping", "deals", "amazon",
+    "amzn", "flipkart", "discount", "promo", "coupon", "myntra", "price drop",
+    "sale", "store", "jobsinuae", "wazaif", "وظائف", "فرصة عمل", "شواغر", "addlist/"
 ]
 
 def get_cloudflare_blacklist():
@@ -65,10 +66,11 @@ def get_curated_keywords():
         except Exception as e:
             print(f"[-] Could not read interests.json: {e}")
 
-    # كلمات افتراضية مركزة في حال غياب الملف
+    # قائمة افتراضية في حال غياب الملف
     default_keywords = [
-        "بايثون", "برمجة", "تطوير الويب", "ذكاء اصطناعي", "تعلم الآلة",
-        "كتاب", "كتب", "رواية", "روايات", "python", "github", "coding"
+        "termux", "github", "python", "script", "scripts", "mod apk", "android",
+        "linux", "api key", "free api", "f-droid", "open source", "proot", "adb",
+        "automation", "bash", "hacking", "بايثون", "ترمكس", "أندرويد", "برمجة", "سكريبت"
     ]
     print(f"[*] Using fallback curated keywords ({len(default_keywords)}).")
     return default_keywords
@@ -108,7 +110,7 @@ def sync_channels(blacklist):
 
     merged_c = merged_c.drop_duplicates(subset=["username"], keep="last")
 
-    # الحذف الفيزيائي للقنوات المحظورة
+    # الحذف الفيزيائي الفعلي للقنوات المحظورة من قاعدة البيانات
     if blacklist and "username" in merged_c.columns:
         initial_c_count = len(merged_c)
         merged_c = merged_c[~merged_c["username"].astype(str).str.lower().isin(blacklist)]
@@ -133,7 +135,7 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def push_to_cloudflare_kv(posts_df):
-    """فلترة صارمة بمطابقة الكلمات الكاملة ومنع الإعلانات قبل الدفع لـ Cloudflare KV"""
+    """فلترة صارمة للمحتوى التقني الحقيقي واستبعاد السبام والمراهنات"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -144,7 +146,7 @@ def push_to_cloudflare_kv(posts_df):
 
     keywords = get_curated_keywords()
 
-    # تجهيز أنماط Regex تمنع تطابق الحروف الجزئية (مثل منع ai داخل alhabaiab)
+    # تجهيز أنماط Regex تمنع تطابق الحروف الجزئية
     compiled_patterns = []
     for k in keywords:
         k_clean = k.strip().lower()
@@ -162,18 +164,22 @@ def push_to_cloudflare_kv(posts_df):
         text = str(row.get("text", "")).lower()
         username = str(row.get("username", "")).lower()
 
-        # 1. استبعاد قنوات ومواقع الصفقات والتسويق التجاري والوظائف
-        if any(spam_word in username for spam_word in COMMERCIAL_SPAM):
-            return False
-        if any(bad_link in text for bad_link in ["amzn.to", "myntr", "flipkart", "al-wazaif", "addlist/"]):
+        # 1. استبعاد فوري لأي بوست يحتوي على سبام المراهنات أو القنوات التجارية
+        if any(s in text for s in SPAM_TRIGGERS) or any(s in username for s in SPAM_TRIGGERS):
             return False
 
-        # 2. فحص النص واسم المعرف للتأكد من وجود الكلمة كاملة ومستقلة
+        # 2. استبعاد المتاجر والروابط الخارجية
+        if any(bad_link in text for bad_link in ["amzn.to", "myntr", "flipkart", "al-wazaif"]):
+            return False
+
+        # 3. شرط جوهري: النص نفسه يجب أن يحتوي على الكلمة التقنية وليس مجرد اسم القناة
+        has_tech_content = False
         for pat in compiled_patterns:
-            if pat.search(text) or pat.search(username):
-                return True
+            if pat.search(text):
+                has_tech_content = True
+                break
 
-        return False
+        return has_tech_content
 
     curated_df = posts_df[posts_df.apply(matches_strict_interest, axis=1)]
     print(f"[+] Found {len(curated_df):,} strictly matched curated posts out of {len(posts_df):,} total.")
@@ -280,7 +286,7 @@ def sync_partitioned_posts(blacklist):
         commit_message="Update dataset partitions manifest"
     )
 
-    # تصفية ودفع أحدث المنشورات لـ Cloudflare KV
+    # تصفية ودفع المنشورات التقنية الصافية فقط لـ Cloudflare KV
     if not all_2026_df.empty:
         push_to_cloudflare_kv(all_2026_df)
 
