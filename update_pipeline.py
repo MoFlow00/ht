@@ -122,6 +122,250 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def push_to_cloudflare_kv(posts_df):
+    """الفلترة الحصرية بمطابقة الكلمة كاملة ومستقلة تماماً كما هي في interests.json"""
+    cf_token = os.getenv("CF_API_TOKEN")
+    cf_account = os.getenv("CF_ACCOUNT_ID")
+    cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
+
+    if not (cf_token and cf_account and cf_kv_id):
+        print("[-] Skipping Cloudflare KV push: Secrets missing.")
+        return
+
+    keywords = load_user_keywords()
+    if not keywords:
+        print("[-] No keywords loaded from interests.json.")
+        return
+
+    # بناء تعبير نمطي صارم يفرض أن الكلمة مستقلة بذاتها وليست جزءاً من أي كلمة أخرى
+    # \b تضمن حدود الكلمة للإنجليزية والأرقام، ونمط المسافات والرموز يضمن ذلك للعربية
+    compiled_patterns = []
+    for k in keywords:
+        k_clean = k.strip().lower()
+        if not k_clean:
+            continue
+        
+        # للكلمات الإنجليزية: مطابقة الكلمة بالكامل فقط (Exact Whole Word)
+        # mod لن تتطابق أبداً مع hqswmod أو moded أو model
+        if re.match(r'^[a-z0-9_-]+
+    """الفلترة الحصرية والصارمة بناءً على ملف interests.json فقط لا غير"""
+    cf_token = os.getenv("CF_API_TOKEN")
+    cf_account = os.getenv("CF_ACCOUNT_ID")
+    cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
+
+    if not (cf_token and cf_account and cf_kv_id):
+        print("[-] Skipping Cloudflare KV push: Secrets missing.")
+        return
+
+    keywords = load_user_keywords()
+    if not keywords:
+        print("[-] No keywords loaded from interests.json. Aborting KV push to prevent garbage data.")
+        return
+
+    # بناء Regex دقيق لكل كلمة لضمان مطابقة الكلمة كاملة فقط
+    compiled_patterns = []
+    for k in keywords:
+        if re.match(r'^[a-z0-9_-]+$', k):
+            compiled_patterns.append(re.compile(rf'\b{re.escape(k)}\b', re.IGNORECASE))
+        else:
+            compiled_patterns.append(re.compile(rf'(?:^|\s|[^\w\u0621-\u064A]){re.escape(k)}(?:$|\s|[^\w\u0621-\u064A])', re.IGNORECASE))
+
+    if "date" in posts_df.columns:
+        posts_df = posts_df.sort_values(by="date", ascending=False)
+
+    # التحقق الحصري: البوست لازم نصه يحتوي على كلمة من interests.json
+    def matches_json_keywords(row):
+        text = str(row.get("text", "")).lower()
+        if not text or text == "nan":
+            return False
+            
+        for pat in compiled_patterns:
+            if pat.search(text):
+                return True
+        return False
+
+    curated_df = posts_df[posts_df.apply(matches_json_keywords, axis=1)]
+    print(f"[+] Found {len(curated_df):,} posts matching your EXACT interests.json keywords (out of {len(posts_df):,} total).")
+
+    cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
+    available_cols = [c for c in cols_to_keep if c in curated_df.columns]
+
+    latest_subset = curated_df[available_cols].head(3000).fillna("").to_dict(orient="records")
+
+    url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/latest_posts"
+    headers = {
+        "Authorization": f"Bearer {cf_token}",
+        "Content-Type": "application/json"
+    }
+
+    res = requests.put(url, headers=headers, json=latest_subset)
+    if res.status_code == 200:
+        print(f"[✓] Successfully pushed {len(latest_subset):,} posts to Cloudflare KV strictly matching your JSON!")
+    else:
+        print(f"[-] Cloudflare KV sync failed: {res.text}")
+
+def sync_partitioned_posts(blacklist):
+    new_p_path = os.path.join(CRAWLER_DIR, "p.parquet")
+    new_posts_df = pd.DataFrame()
+    if os.path.exists(new_p_path):
+        new_posts_df = pd.read_parquet(new_p_path)
+
+    manifest_data = {}
+    try:
+        m_path = hf_hub_download(repo_id=HF_REPO_ID, filename="manifest.json", repo_type="dataset", token=HF_TOKEN)
+        with open(m_path, "r", encoding="utf-8") as f:
+            manifest_data = json.load(f)
+    except Exception:
+        manifest_data = {"2026": {"file": "posts_2026.parquet"}}
+
+    if not new_posts_df.empty:
+        new_posts_df["year_partition"] = new_posts_df["date"].apply(extract_year_safely)
+        for y in new_posts_df["year_partition"].unique():
+            if y not in manifest_data:
+                manifest_data[y] = {"file": f"posts_{y}.parquet"}
+
+    all_2026_df = pd.DataFrame()
+    total_posts_all_years = 0
+
+    for year, meta in manifest_data.items():
+        partition_filename = meta.get("file", f"posts_{year}.parquet")
+        existing_year_df = pd.DataFrame()
+        try:
+            year_path = hf_hub_download(repo_id=HF_REPO_ID, filename=partition_filename, repo_type="dataset", token=HF_TOKEN)
+            existing_year_df = pd.read_parquet(year_path)
+        except Exception:
+            pass
+
+        chunk_new = pd.DataFrame()
+        if not new_posts_df.empty and "year_partition" in new_posts_df.columns:
+            chunk_new = new_posts_df[new_posts_df["year_partition"] == year].drop(columns=["year_partition"], errors="ignore")
+
+        merged_year = pd.concat([existing_year_df, chunk_new], ignore_index=True)
+        if merged_year.empty:
+            continue
+
+        if "id" in merged_year.columns:
+            merged_year = merged_year.drop_duplicates(subset=["id"], keep="last")
+        else:
+            merged_year = merged_year.drop_duplicates(subset=["username", "post_id"], keep="last")
+
+        # الحذف الفيزيائي للبوستات التابعة لقنوات البلاك ليست
+        if blacklist and "username" in merged_year.columns:
+            initial_p_count = len(merged_year)
+            merged_year = merged_year[~merged_year["username"].astype(str).str.lower().isin(blacklist)]
+            purged_p = initial_p_count - len(merged_year)
+            if purged_p > 0:
+                print(f"[🔥] Permanently purged {purged_p:,} posts from {partition_filename}!")
+
+        if year == "2026":
+            all_2026_df = merged_year
+
+        local_year_file = os.path.join(LOCAL_DIR, partition_filename)
+        merged_year.to_parquet(local_year_file, compression="zstd", index=False)
+
+        api.upload_file(
+            path_or_fileobj=local_year_file,
+            path_in_repo=partition_filename,
+            repo_id=HF_REPO_ID,
+            repo_type="dataset",
+            commit_message=f"Sync & clean partition {partition_filename}: {len(merged_year):,} posts"
+        )
+
+        manifest_data[year] = {
+            "file": partition_filename,
+            "total_rows": len(merged_year),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+
+    manifest_path = os.path.join(LOCAL_DIR, "manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=2)
+
+    api.upload_file(
+        path_or_fileobj=manifest_path,
+        path_in_repo="manifest.json",
+        repo_id=HF_REPO_ID,
+        repo_type="dataset",
+        commit_message="Update dataset partitions manifest"
+    )
+
+    # الفلترة والدفع لـ KV بالاعتماد الحصري على ملف interests.json
+    if not all_2026_df.empty:
+        push_to_cloudflare_kv(all_2026_df)
+
+    for y in manifest_data:
+        total_posts_all_years += manifest_data[y].get("total_rows", 0)
+
+    return len(new_posts_df), total_posts_all_years
+
+def main():
+    print("\n" + "=" * 65)
+    print("🚀 بدء مزامنة ورفع وتطهير البيانات السحابية...")
+    print("=" * 65)
+
+    blacklist = get_cloudflare_blacklist()
+    c_crawled, c_total, c_remaining = sync_channels(blacklist)
+    p_crawled, p_total = sync_partitioned_posts(blacklist)
+
+    c_checked = c_total - c_remaining
+    progress_pct = (c_checked / c_total * 100) if c_total > 0 else 0
+
+    print("\n" + "╔" + "═" * 63 + "╗")
+    print("║          🔥 تقرير إنجاز الجولة الحالية (Round Dashboard)       ║")
+    print("╠" + "═" * 63 + "╣")
+    print(f"║ 📥 قنوات تم فحصها وتحديثها الجولة دي : {c_crawled:,} قناة")
+    print(f"║ 💬 منشورات جديدة تم إضافتها للسحابة   : +{p_crawled:,} بوست جديد")
+    print("╠" + "═" * 63 + "╣")
+    print(f"║ 📊 إجمالي القنوات الكلي في القاعدة    : {c_total:,} قناة")
+    print(f"║ ✅ إجمالي القنوات المفحوصة حتى الآن  : {c_checked:,} قناة")
+    print(f"║ ⏳ المتبقي في الطابور للفحص           : {c_remaining:,} قناة")
+    print(f"║ 📈 نسبة إنجاز الطابور الكلي          : {progress_pct:.2f}%")
+    print(f"║ 📚 إجمالي المنشورات الكلي في السحابة  : {p_total:,} بوست")
+    print("╚" + "═" * 63 + "╝\n")
+
+if __name__ == "__main__":
+    main(), k_clean):
+            pattern = re.compile(rf'(?<![a-zA-Z0-9_]){re.escape(k_clean)}(?![a-zA-Z0-9_])', re.IGNORECASE)
+        else:
+            # للكلمات العربية: مطابقة الكلمة كاملة محاطة بمسافات أو علامات ترقيم
+            pattern = re.compile(rf'(?<![\w\u0621-\u064A]){re.escape(k_clean)}(?![\w\u0621-\u064A])', re.IGNORECASE)
+            
+        compiled_patterns.append(pattern)
+
+    if "date" in posts_df.columns:
+        posts_df = posts_df.sort_values(by="date", ascending=False)
+
+    # الفحص داخل نص المنشور فقط وليس اسم القناة
+    def matches_exact_word_in_text(row):
+        text = str(row.get("text", "")).strip()
+        if not text or text.lower() == "nan":
+            return False
+
+        # البحث عن الكلمة المستقلة فقط داخل نص المنشور
+        for pat in compiled_patterns:
+            if pat.search(text):
+                return True
+        return False
+
+    curated_df = posts_df[posts_df.apply(matches_exact_word_in_text, axis=1)]
+    print(f"[+] Found {len(curated_df):,} posts matching your EXACT whole words in interests.json (out of {len(posts_df):,} total).")
+
+    cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
+    available_cols = [c for c in cols_to_keep if c in curated_df.columns]
+
+    latest_subset = curated_df[available_cols].head(3000).fillna("").to_dict(orient="records")
+
+    url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/latest_posts"
+    headers = {
+        "Authorization": f"Bearer {cf_token}",
+        "Content-Type": "application/json"
+    }
+
+    res = requests.put(url, headers=headers, json=latest_subset)
+    if res.status_code == 200:
+        print(f"[✓] Successfully pushed {len(latest_subset):,} posts to Cloudflare KV matching exact keywords only!")
+    else:
+        print(f"[-] Cloudflare KV sync failed: {res.text}")
+
     """الفلترة الحصرية والصارمة بناءً على ملف interests.json فقط لا غير"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
