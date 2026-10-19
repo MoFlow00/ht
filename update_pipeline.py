@@ -15,14 +15,6 @@ CRAWLER_DIR = "crawler_output"
 os.makedirs(LOCAL_DIR, exist_ok=True)
 api = HfApi(token=HF_TOKEN)
 
-# قائمة استبعاد صريحة للإعلانات والمراهنات والسبام الهندي والمتاجر
-SPAM_TRIGGERS = [
-    "yono", "bonus", "rummy", "earning", "₹", "bhailog", "bhai", "win cash",
-    "refer", "loot", "t.me/+", "joinchat", "shopping", "deals", "amazon",
-    "amzn", "flipkart", "discount", "promo", "coupon", "myntra", "price drop",
-    "sale", "store", "jobsinuae", "wazaif", "وظائف", "فرصة عمل", "شواغر", "addlist/"
-]
-
 def get_cloudflare_blacklist():
     """جلب قائمة القنوات المحظورة مركزياً من Cloudflare KV لتطهيرها نهائياً"""
     cf_token = os.getenv("CF_API_TOKEN")
@@ -51,29 +43,24 @@ def get_cloudflare_blacklist():
 
     return set()
 
-def get_curated_keywords():
-    """قراءة قائمة الكلمات المفتاحية للاهتمامات من ملف interests.json"""
+def load_user_keywords():
+    """قراءة الكلمات المفتاحية من ملف interests.json حصراً دون أي إضافات خارجية"""
     kw_file = "interests.json"
-    if os.path.exists(kw_file):
-        try:
-            with open(kw_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                words = data.get("keywords", [])
-                keywords = [str(w).lower().strip() for w in words if str(w).strip()]
-                if keywords:
-                    print(f"[*] Loaded {len(keywords)} curated interest keywords from interests.json.")
-                    return keywords
-        except Exception as e:
-            print(f"[-] Could not read interests.json: {e}")
+    if not os.path.exists(kw_file):
+        print("[!] WARNING: interests.json file NOT FOUND in root directory!")
+        return []
 
-    # قائمة افتراضية في حال غياب الملف
-    default_keywords = [
-        "termux", "github", "python", "script", "scripts", "mod apk", "android",
-        "linux", "api key", "free api", "f-droid", "open source", "proot", "adb",
-        "automation", "bash", "hacking", "بايثون", "ترمكس", "أندرويد", "برمجة", "سكريبت"
-    ]
-    print(f"[*] Using fallback curated keywords ({len(default_keywords)}).")
-    return default_keywords
+    try:
+        with open(kw_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            raw_words = data.get("keywords", [])
+            keywords = [str(w).lower().strip() for w in raw_words if str(w).strip()]
+            print(f"[✓] Successfully loaded {len(keywords)} EXACT keywords from interests.json:")
+            print(f"    -> {keywords}")
+            return keywords
+    except Exception as e:
+        print(f"[-] Error parsing interests.json: {e}")
+        return []
 
 def extract_year_safely(date_val):
     if pd.isna(date_val) or not str(date_val).strip():
@@ -135,7 +122,7 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def push_to_cloudflare_kv(posts_df):
-    """فلترة صارمة للمحتوى التقني الحقيقي واستبعاد السبام والمراهنات"""
+    """الفلترة الحصرية والصارمة بناءً على ملف interests.json فقط لا غير"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -144,45 +131,35 @@ def push_to_cloudflare_kv(posts_df):
         print("[-] Skipping Cloudflare KV push: Secrets missing.")
         return
 
-    keywords = get_curated_keywords()
+    keywords = load_user_keywords()
+    if not keywords:
+        print("[-] No keywords loaded from interests.json. Aborting KV push to prevent garbage data.")
+        return
 
-    # تجهيز أنماط Regex تمنع تطابق الحروف الجزئية
+    # بناء Regex دقيق لكل كلمة لضمان مطابقة الكلمة كاملة فقط
     compiled_patterns = []
     for k in keywords:
-        k_clean = k.strip().lower()
-        if not k_clean:
-            continue
-        if re.match(r'^[a-z0-9_-]+$', k_clean):
-            compiled_patterns.append(re.compile(rf'\b{re.escape(k_clean)}\b', re.IGNORECASE))
+        if re.match(r'^[a-z0-9_-]+$', k):
+            compiled_patterns.append(re.compile(rf'\b{re.escape(k)}\b', re.IGNORECASE))
         else:
-            compiled_patterns.append(re.compile(rf'(?:^|\s|[^\w\u0621-\u064A]){re.escape(k_clean)}(?:$|\s|[^\w\u0621-\u064A])', re.IGNORECASE))
+            compiled_patterns.append(re.compile(rf'(?:^|\s|[^\w\u0621-\u064A]){re.escape(k)}(?:$|\s|[^\w\u0621-\u064A])', re.IGNORECASE))
 
     if "date" in posts_df.columns:
         posts_df = posts_df.sort_values(by="date", ascending=False)
 
-    def matches_strict_interest(row):
+    # التحقق الحصري: البوست لازم نصه يحتوي على كلمة من interests.json
+    def matches_json_keywords(row):
         text = str(row.get("text", "")).lower()
-        username = str(row.get("username", "")).lower()
-
-        # 1. استبعاد فوري لأي بوست يحتوي على سبام المراهنات أو القنوات التجارية
-        if any(s in text for s in SPAM_TRIGGERS) or any(s in username for s in SPAM_TRIGGERS):
+        if not text or text == "nan":
             return False
-
-        # 2. استبعاد المتاجر والروابط الخارجية
-        if any(bad_link in text for bad_link in ["amzn.to", "myntr", "flipkart", "al-wazaif"]):
-            return False
-
-        # 3. شرط جوهري: النص نفسه يجب أن يحتوي على الكلمة التقنية وليس مجرد اسم القناة
-        has_tech_content = False
+            
         for pat in compiled_patterns:
             if pat.search(text):
-                has_tech_content = True
-                break
+                return True
+        return False
 
-        return has_tech_content
-
-    curated_df = posts_df[posts_df.apply(matches_strict_interest, axis=1)]
-    print(f"[+] Found {len(curated_df):,} strictly matched curated posts out of {len(posts_df):,} total.")
+    curated_df = posts_df[posts_df.apply(matches_json_keywords, axis=1)]
+    print(f"[+] Found {len(curated_df):,} posts matching your EXACT interests.json keywords (out of {len(posts_df):,} total).")
 
     cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
     available_cols = [c for c in cols_to_keep if c in curated_df.columns]
@@ -197,7 +174,7 @@ def push_to_cloudflare_kv(posts_df):
 
     res = requests.put(url, headers=headers, json=latest_subset)
     if res.status_code == 200:
-        print(f"[✓] Successfully pushed {len(latest_subset):,} CLEAN Curated posts to Cloudflare KV!")
+        print(f"[✓] Successfully pushed {len(latest_subset):,} posts to Cloudflare KV strictly matching your JSON!")
     else:
         print(f"[-] Cloudflare KV sync failed: {res.text}")
 
@@ -286,7 +263,7 @@ def sync_partitioned_posts(blacklist):
         commit_message="Update dataset partitions manifest"
     )
 
-    # تصفية ودفع المنشورات التقنية الصافية فقط لـ Cloudflare KV
+    # الفلترة والدفع لـ KV بالاعتماد الحصري على ملف interests.json
     if not all_2026_df.empty:
         push_to_cloudflare_kv(all_2026_df)
 
