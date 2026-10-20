@@ -3,7 +3,7 @@ import re
 import json
 import requests
 import pandas as pd
-from collections import defaultdict, Counter
+from collections import Counter
 from datetime import datetime, timezone
 from huggingface_hub import HfApi, hf_hub_download
 
@@ -13,10 +13,13 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 LOCAL_DIR = "data_sync"
 CRAWLER_DIR = "crawler_output"
 
+# رفع سعة الفيد النشط إلى 8,000 منشور ممتع ومصنف
+MAX_FEED_LIMIT = 8000
+SAMPLE_SCAN_LIMIT = 40000
+
 os.makedirs(LOCAL_DIR, exist_ok=True)
 api = HfApi(token=HF_TOKEN)
 
-# قائمة الحظر الصارم والفوري لإعلانات القمار والسبام الهندي والمتاجر
 HARD_SPAM_BLOCKLIST = [
     "₹", "yono", "rummy", "bhailog", "bhai", "loot", "win cash",
     "t.me/+", "t.me/joinchat", "bonus upto", "free paytm", "1xbet",
@@ -24,7 +27,6 @@ HARD_SPAM_BLOCKLIST = [
 ]
 
 def get_cloudflare_blacklist():
-    """جلب قائمة القنوات المحظورة مركزياً من Cloudflare KV لتطهيرها نهائياً"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -33,10 +35,7 @@ def get_cloudflare_blacklist():
         return set()
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/blacklist"
-    headers = {
-        "Authorization": f"Bearer {cf_token}",
-        "Content-Type": "application/json"
-    }
+    headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
 
     try:
         res = requests.get(url, headers=headers, timeout=15)
@@ -52,7 +51,6 @@ def get_cloudflare_blacklist():
     return set()
 
 def load_user_keywords():
-    """قراءة الكلمات المفتاحية من ملف interests.json حصراً"""
     kw_file = "interests.json"
     if not os.path.exists(kw_file):
         print("[!] WARNING: interests.json file NOT FOUND!")
@@ -128,7 +126,7 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def extract_and_push_explorer_data(posts_df):
-    """محرك استخراج الكيانات التقنية (GitHub Repos, Packages, Commands)"""
+    """محرك استخراج الكنوز والكيانات: Repos, Packages, Viral Channels"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -136,17 +134,14 @@ def extract_and_push_explorer_data(posts_df):
     if not (cf_token and cf_account and cf_kv_id):
         return
 
-    print("[*] Running Advanced Entity Extraction on Dataset...")
-
-    # فحص أحدث 30,000 منشور لاستخراج أحدث وأقوى الكنوز والمستودعات
-    sample_df = posts_df.head(30000)
+    print("[*] Running Deep Entity Extraction for Discovery Hub...")
+    sample_df = posts_df.head(SAMPLE_SCAN_LIMIT)
 
     github_repo_counter = Counter()
     github_repo_meta = {}
     tools_counter = Counter()
     channel_tech_score = Counter()
 
-    # أنماط الاستخراج
     github_pattern = re.compile(r'github\.com/([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)', re.IGNORECASE)
     pkg_pattern = re.compile(r'(?:pip install|pkg install|apt install)\s+([a-zA-Z0-9_-]+)', re.IGNORECASE)
 
@@ -156,7 +151,6 @@ def extract_and_push_explorer_data(posts_df):
         if not text or text == "nan":
             continue
 
-        # 1. استخراج مستودعات GitHub
         found_repos = github_pattern.findall(text)
         for repo in found_repos:
             clean_repo = repo.strip().rstrip("/").rstrip(".")
@@ -170,20 +164,17 @@ def extract_and_push_explorer_data(posts_df):
                         "sample_text": text[:140]
                     }
 
-        # 2. استخراج حزم وأوامر بايثون وترمكس
         found_pkgs = pkg_pattern.findall(text)
         for pkg in found_pkgs:
             clean_pkg = pkg.strip().lower()
             if 3 <= len(clean_pkg) <= 30:
                 tools_counter[clean_pkg] += 1
 
-        # 3. حساب غزارة المحتوى التقني لكل قناة
         if found_repos or found_pkgs or any(k in text.lower() for k in ["script", "termux", "python", "api"]):
             channel_tech_score[username] += 1
 
-    # إعداد قوائم التصدير
     top_github_repos = []
-    for repo, count in github_repo_counter.most_common(40):
+    for repo, count in github_repo_counter.most_common(50):
         meta = github_repo_meta.get(repo, {})
         top_github_repos.append({
             "repo": repo,
@@ -193,8 +184,8 @@ def extract_and_push_explorer_data(posts_df):
             "preview": meta.get("sample_text", "")
         })
 
-    top_packages = [{"package": pkg, "mentions": count} for pkg, count in tools_counter.most_common(30)]
-    top_channels = [{"username": ch, "tech_posts": count} for ch, count in channel_tech_score.most_common(25)]
+    top_packages = [{"package": pkg, "mentions": count} for pkg, count in tools_counter.most_common(35)]
+    top_channels = [{"username": ch, "tech_posts": count} for ch, count in channel_tech_score.most_common(30)]
 
     explorer_payload = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -208,10 +199,10 @@ def extract_and_push_explorer_data(posts_df):
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
     res = requests.put(url, headers=headers, json=explorer_payload)
     if res.status_code == 200:
-        print(f"[✓] Explorer Intelligence successfully pushed ({len(top_github_repos)} Top GitHub Repos Discovered)!")
+        print(f"[✓] Explorer Discovery Hub pushed ({len(top_github_repos)} Top GitHub Repos Found)!")
 
 def push_to_cloudflare_kv(posts_df):
-    """فلترة فورية فائقة السرعة للـ Feed اللحظي"""
+    """فلترة وضخ حتى 8,000 منشور نشط مع ترتيب قائم على الجودة والتفاعل"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -225,12 +216,12 @@ def push_to_cloudflare_kv(posts_df):
         print("[-] No keywords loaded from interests.json.")
         return
 
-    print(f"[*] Curating live feed from {len(posts_df):,} posts...")
+    print(f"[*] Curating high-yield live feed from {len(posts_df):,} posts...")
 
     if "date" in posts_df.columns:
         posts_df = posts_df.sort_values(by="date", ascending=False)
 
-    recent_candidates = posts_df.head(15000).copy()
+    recent_candidates = posts_df.head(SAMPLE_SCAN_LIMIT).copy()
 
     escaped_keywords = [re.escape(k) for k in keywords if k]
     combined_pattern_str = r'(?<![\w\u0621-\u064A])(' + '|'.join(escaped_keywords) + r')(?![\w\u0621-\u064A])'
@@ -251,16 +242,20 @@ def push_to_cloudflare_kv(posts_df):
             continue
 
         text_lower = text.lower()
+
+        # طرد الرموز الصينية والسبام
         if chinese_pattern.search(text):
             continue
         if spam_pattern.search(text_lower) or spam_pattern.search(username):
             continue
+
+        # مطابقة الكلمات التقنية الحصرية من interests.json
         if master_regex.search(text):
             clean_curated.append(r)
-            if len(clean_curated) >= 3000:
+            if len(clean_curated) >= MAX_FEED_LIMIT:
                 break
 
-    print(f"[+] Instantly curated {len(clean_curated):,} high-quality live feed posts!")
+    print(f"[+] Successfully curated {len(clean_curated):,} clean tech posts (Cap: {MAX_FEED_LIMIT})!")
 
     cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
     latest_subset = []
@@ -272,9 +267,9 @@ def push_to_cloudflare_kv(posts_df):
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
     res = requests.put(url, headers=headers, json=latest_subset)
     if res.status_code == 200:
-        print(f"[✓] Live Feed pushed to Cloudflare KV!")
+        print(f"[✓] Live Feed pushed {len(latest_subset):,} posts to Cloudflare KV!")
 
-    # تشغيل محرك الاستكشاف والكيانات بالتوازي
+    # تشغيل محرك استكشاف الكنوز والكيانات
     extract_and_push_explorer_data(posts_df)
 
 def sync_partitioned_posts(blacklist):
@@ -371,7 +366,7 @@ def sync_partitioned_posts(blacklist):
 
 def main():
     print("\n" + "=" * 65)
-    print("🚀 بدء مزامنة واستخراج البيانات السحابية...")
+    print("🚀 بدء مزامنة ورفع وتوسيع استكشاف البيانات...")
     print("=" * 65)
 
     blacklist = get_cloudflare_blacklist()
