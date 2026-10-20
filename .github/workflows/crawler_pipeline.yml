@@ -6,6 +6,13 @@ on:
     - cron: '*/30 * * * *'
   workflow_dispatch:
 
+concurrency:
+  group: telegram-crawler-sync
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
   crawl_and_sync:
     runs-on: ubuntu-latest

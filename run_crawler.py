@@ -163,41 +163,35 @@ def extract_post_data(msg, username):
 
 async def fetch_channel(session, semaphore, username):
     url = f"https://t.me/s/{username}"
-    now_iso = datetime.now(timezone.utc).isoformat()
     async with semaphore:
-        await asyncio.sleep(random.uniform(0.1, 0.4))
-        try:
-            req_headers = {"User-Agent": random.choice(USER_AGENTS)}
-            async with session.get(url, headers=req_headers, timeout=14) as resp:
-                if resp.status == 200:
-                    html = await resp.text()
-                    soup = BeautifulSoup(html, "html.parser")
-                    
-                    channel_meta = extract_channel_meta(soup, username)
-                    posts = []
-                    discovered_channels = set()
-
-                    messages = soup.select(".tgme_widget_message_wrap")
-                    for msg in messages:
-                        post_data, found_ch = extract_post_data(msg, username)
-                        if post_data:
-                            posts.append(post_data)
-                        discovered_channels.update(found_ch)
-
-                    return channel_meta, posts, discovered_channels
-        except Exception:
-            pass
-
-    dead_meta = {
-        "username": str(username).lower(),
-        "title": str(username),
-        "description": "",
-        "subscribers": "0",
-        "avatar": "",
-        "verified": "False",
-        "last_checked": now_iso
-    }
-    return dead_meta, [], set()
+        for attempt in range(3):
+            try:
+                req_headers = {"User-Agent": random.choice(USER_AGENTS)}
+                async with session.get(url, headers=req_headers, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                    if resp.status == 200:
+                        html = await resp.text()
+                        soup = BeautifulSoup(html, "html.parser")
+                        channel_meta = extract_channel_meta(soup, username)
+                        channel_meta["last_checked"] = datetime.now(timezone.utc).isoformat()
+                        posts, discovered_channels = [], set()
+                        for msg in soup.select(".tgme_widget_message_wrap"):
+                            post_data, found_ch = extract_post_data(msg, username)
+                            if post_data:
+                                posts.append(post_data)
+                            discovered_channels.update(found_ch)
+                        return channel_meta, posts, discovered_channels
+                    if resp.status not in (429, 500, 502, 503, 504):
+                        print(f"[!] {username}: HTTP {resp.status}; leaving channel queued")
+                        return None, [], set()
+                    retry_after = resp.headers.get("Retry-After", "")
+                    delay = min(float(retry_after), 30) if retry_after.isdigit() else 2 ** attempt
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                delay = 2 ** attempt
+                if attempt == 2:
+                    print(f"[!] {username}: request failed ({exc}); leaving channel queued")
+            if attempt < 2:
+                await asyncio.sleep(delay + random.uniform(0, 0.5))
+    return None, [], set()
 
 async def main():
     print("[*] Starting Tech-Prioritized Queue Telegram Cloud Scraper...")
