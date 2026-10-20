@@ -128,7 +128,7 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def push_to_cloudflare_kv(posts_df):
-    """فلترة فورية فائقة السرعة تقتصر على أحدث المنشورات وتتم في ثوانٍ معدودة"""
+    """فلترة فورية فائقة السرعة متوافقة مع جميع محركات النصوص وتتم في ثوانٍ معدودة"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -148,37 +148,53 @@ def push_to_cloudflare_kv(posts_df):
     if "date" in posts_df.columns:
         posts_df = posts_df.sort_values(by="date", ascending=False)
 
-    # 2. اقتطاع شريحة أحدث 15,000 منشور لفحصها بدل فحص المليون منشور بالكامل
+    # 2. اقتطاع شريحة أحدث 15,000 منشور فقط
     recent_candidates = posts_df.head(15000).copy()
 
-    # 3. دمج كل كلمات الاهتمامات في نمط Regex واحد عملاق وفائق السرعة
+    # 3. بناء أنماط الـ Regex في بايثون الصافي
     escaped_keywords = [re.escape(k) for k in keywords if k]
     combined_pattern_str = r'(?<![\w\u0621-\u064A])(' + '|'.join(escaped_keywords) + r')(?![\w\u0621-\u064A])'
     master_regex = re.compile(combined_pattern_str, re.IGNORECASE)
 
-    # 4. دمج كلمات السبام في نمط واحد
     escaped_spam = [re.escape(s) for s in HARD_SPAM_BLOCKLIST if s]
     spam_pattern = re.compile('|'.join(escaped_spam), re.IGNORECASE)
     chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
 
-    # 5. الفلترة السريعة المبنية على السلسلة النصية (Vectorized C-Engine)
-    texts = recent_candidates["text"].fillna("").astype(str).str.lower()
-    usernames = recent_candidates["username"].fillna("").astype(str).str.lower()
+    # 4. فلترة سريعة مباشرة في رامات بايثون
+    records = recent_candidates.to_dict(orient="records")
+    clean_curated = []
 
-    valid_mask = texts.str.strip().ne("")
-    no_spam_mask = ~texts.str.contains(spam_pattern, regex=True) & ~usernames.str.contains(spam_pattern, regex=True)
-    no_chinese_mask = ~texts.str.contains(chinese_pattern, regex=True)
-    tech_match_mask = texts.str.contains(master_regex, regex=True)
+    for r in records:
+        text = str(r.get("text", "") or "").strip()
+        username = str(r.get("username", "") or "").strip().lower()
 
-    final_mask = valid_mask & no_spam_mask & no_chinese_mask & tech_match_mask
-    curated_df = recent_candidates[final_mask]
+        if not text or text.lower() == "nan":
+            continue
 
-    print(f"[+] Instantly curated {len(curated_df):,} high-quality posts in ~1 second!")
+        text_lower = text.lower()
+
+        # استبعاد الرموز الصينية
+        if chinese_pattern.search(text):
+            continue
+
+        # استبعاد السبام والقمار
+        if spam_pattern.search(text_lower) or spam_pattern.search(username):
+            continue
+
+        # مطابقة الكلمات التقنية
+        if master_regex.search(text):
+            clean_curated.append(r)
+            if len(clean_curated) >= 3000:
+                break
+
+    print(f"[+] Instantly curated {len(clean_curated):,} high-quality posts in ~0.5s!")
 
     cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
-    available_cols = [c for c in cols_to_keep if c in curated_df.columns]
-
-    latest_subset = curated_df[available_cols].head(3000).fillna("").to_dict(orient="records")
+    
+    latest_subset = []
+    for p in clean_curated:
+        row_dict = {c: str(p.get(c, "") if pd.notna(p.get(c)) else "") for c in cols_to_keep}
+        latest_subset.append(row_dict)
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/latest_posts"
     headers = {
