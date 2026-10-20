@@ -13,13 +13,14 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 LOCAL_DIR = "data_sync"
 CRAWLER_DIR = "crawler_output"
 
-# رفع سعة الفيد النشط إلى 8,000 منشور ممتع ومصنف
+# سعة الخلاصة النشطة وفحص العينات الموسع
 MAX_FEED_LIMIT = 8000
 SAMPLE_SCAN_LIMIT = 40000
 
 os.makedirs(LOCAL_DIR, exist_ok=True)
 api = HfApi(token=HF_TOKEN)
 
+# قائمة الحظر الصارم والفوري لإعلانات القمار والسبام الهندي والمتاجر
 HARD_SPAM_BLOCKLIST = [
     "₹", "yono", "rummy", "bhailog", "bhai", "loot", "win cash",
     "t.me/+", "t.me/joinchat", "bonus upto", "free paytm", "1xbet",
@@ -27,6 +28,7 @@ HARD_SPAM_BLOCKLIST = [
 ]
 
 def get_cloudflare_blacklist():
+    """جلب قائمة القنوات المحظورة مركزياً من Cloudflare KV لتطهيرها نهائياً"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -51,6 +53,7 @@ def get_cloudflare_blacklist():
     return set()
 
 def load_user_keywords():
+    """قراءة الكلمات المفتاحية من ملف interests.json حصراً"""
     kw_file = "interests.json"
     if not os.path.exists(kw_file):
         print("[!] WARNING: interests.json file NOT FOUND!")
@@ -126,7 +129,7 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def extract_and_push_explorer_data(posts_df):
-    """محرك استخراج الكنوز والكيانات: Repos, Packages, Viral Channels"""
+    """رادار شامل: مواقع AI، أدوات نادرة، مستودعات GitHub، وأوامر مطورين"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -134,16 +137,31 @@ def extract_and_push_explorer_data(posts_df):
     if not (cf_token and cf_account and cf_kv_id):
         return
 
-    print("[*] Running Deep Entity Extraction for Discovery Hub...")
+    print("[*] Running Deep Multi-Asset Discovery (AI Tools, Web Gems, GitHub)...")
     sample_df = posts_df.head(SAMPLE_SCAN_LIMIT)
 
-    github_repo_counter = Counter()
-    github_repo_meta = {}
-    tools_counter = Counter()
-    channel_tech_score = Counter()
+    ai_sites_counter = Counter()
+    ai_sites_meta = {}
 
+    web_gems_counter = Counter()
+    web_gems_meta = {}
+
+    github_counter = Counter()
+    github_meta = {}
+
+    tools_counter = Counter()
+
+    url_pattern = re.compile(r'https?://([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(/[^\s]*)?', re.IGNORECASE)
     github_pattern = re.compile(r'github\.com/([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)', re.IGNORECASE)
     pkg_pattern = re.compile(r'(?:pip install|pkg install|apt install)\s+([a-zA-Z0-9_-]+)', re.IGNORECASE)
+
+    EXCLUDED_DOMAINS = {
+        "t.me", "telegram.org", "youtube.com", "youtu.be", "twitter.com", "x.com",
+        "facebook.com", "instagram.com", "tiktok.com", "amzn.to", "amazon.com",
+        "mediafire.com", "mega.nz", "drive.google.com"
+    }
+
+    AI_KEYWORDS = ["ai", "gpt", "claude", "gemini", "deepseek", "llm", "agent", "model", "token", "prompt"]
 
     for _, row in sample_df.iterrows():
         text = str(row.get("text", "") or "")
@@ -151,55 +169,90 @@ def extract_and_push_explorer_data(posts_df):
         if not text or text == "nan":
             continue
 
-        found_repos = github_pattern.findall(text)
-        for repo in found_repos:
+        text_lower = text.lower()
+
+        # 1. استخراج مواقع الذكاء الاصطناعي والمواقع الغريبة (Web Gems)
+        found_urls = url_pattern.findall(text)
+        for domain, path in found_urls:
+            dom = domain.lower().replace("www.", "")
+            if dom in EXCLUDED_DOMAINS or "github.com" in dom:
+                continue
+
+            full_link = f"https://{dom}{path}" if path else f"https://{dom}"
+            clean_link = full_link.split("?")[0].rstrip("/")
+
+            is_ai = any(k in dom or k in text_lower for k in AI_KEYWORDS)
+
+            if is_ai:
+                ai_sites_counter[dom] += 1
+                if dom not in ai_sites_meta:
+                    ai_sites_meta[dom] = {"url": clean_link, "domain": dom, "sample": text[:130], "channel": username}
+            else:
+                if any(tool_word in text_lower for tool_word in ["tool", "free", "api", "web", "app", "online", "generator"]):
+                    web_gems_counter[dom] += 1
+                    if dom not in web_gems_meta:
+                        web_gems_meta[dom] = {"url": clean_link, "domain": dom, "sample": text[:130], "channel": username}
+
+        # 2. مستودعات GitHub
+        for repo in github_pattern.findall(text):
             clean_repo = repo.strip().rstrip("/").rstrip(".")
             if len(clean_repo.split("/")) == 2 and not clean_repo.endswith((".git", ".png", ".jpg")):
-                github_repo_counter[clean_repo] += 1
-                if clean_repo not in github_repo_meta:
-                    github_repo_meta[clean_repo] = {
-                        "name": clean_repo,
-                        "url": f"https://github.com/{clean_repo}",
-                        "source_channel": username,
-                        "sample_text": text[:140]
-                    }
+                github_counter[clean_repo] += 1
+                if clean_repo not in github_meta:
+                    github_meta[clean_repo] = {"name": clean_repo, "url": f"https://github.com/{clean_repo}", "sample": text[:130], "channel": username}
 
-        found_pkgs = pkg_pattern.findall(text)
-        for pkg in found_pkgs:
+        # 3. أوامر بايثون وترمكس
+        for pkg in pkg_pattern.findall(text):
             clean_pkg = pkg.strip().lower()
             if 3 <= len(clean_pkg) <= 30:
                 tools_counter[clean_pkg] += 1
 
-        if found_repos or found_pkgs or any(k in text.lower() for k in ["script", "termux", "python", "api"]):
-            channel_tech_score[username] += 1
-
-    top_github_repos = []
-    for repo, count in github_repo_counter.most_common(50):
-        meta = github_repo_meta.get(repo, {})
-        top_github_repos.append({
-            "repo": repo,
-            "url": meta.get("url", f"https://github.com/{repo}"),
+    top_ai_tools = []
+    for dom, count in ai_sites_counter.most_common(25):
+        meta = ai_sites_meta.get(dom, {})
+        top_ai_tools.append({
+            "title": dom,
+            "url": meta.get("url", f"https://{dom}"),
             "mentions": count,
-            "channel": meta.get("source_channel", ""),
-            "preview": meta.get("sample_text", "")
+            "preview": meta.get("sample", ""),
+            "channel": meta.get("channel", "")
         })
 
-    top_packages = [{"package": pkg, "mentions": count} for pkg, count in tools_counter.most_common(35)]
-    top_channels = [{"username": ch, "tech_posts": count} for ch, count in channel_tech_score.most_common(30)]
+    top_web_gems = []
+    for dom, count in web_gems_counter.most_common(25):
+        meta = web_gems_meta.get(dom, {})
+        top_web_gems.append({
+            "title": dom,
+            "url": meta.get("url", f"https://{dom}"),
+            "mentions": count,
+            "preview": meta.get("sample", ""),
+            "channel": meta.get("channel", "")
+        })
+
+    top_github = []
+    for repo, count in github_counter.most_common(25):
+        meta = github_meta.get(repo, {})
+        top_github.append({
+            "title": repo,
+            "url": meta.get("url", f"https://github.com/{repo}"),
+            "mentions": count,
+            "preview": meta.get("sample", ""),
+            "channel": meta.get("channel", "")
+        })
 
     explorer_payload = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "total_repos_discovered": len(github_repo_counter),
-        "top_repos": top_github_repos,
-        "top_packages": top_packages,
-        "top_tech_channels": top_channels
+        "top_ai_tools": top_ai_tools,
+        "top_web_gems": top_web_gems,
+        "top_repos": top_github,
+        "top_packages": [{"package": p, "mentions": c} for p, c in tools_counter.most_common(25)]
     }
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/curated_explorer_data"
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
     res = requests.put(url, headers=headers, json=explorer_payload)
     if res.status_code == 200:
-        print(f"[✓] Explorer Discovery Hub pushed ({len(top_github_repos)} Top GitHub Repos Found)!")
+        print(f"[✓] Multi-Asset Hub Synced: {len(top_ai_tools)} AI Sites, {len(top_web_gems)} Web Gems, {len(top_github)} Repos!")
 
 def push_to_cloudflare_kv(posts_df):
     """فلترة وضخ حتى 8,000 منشور نشط مع ترتيب قائم على الجودة والتفاعل"""
