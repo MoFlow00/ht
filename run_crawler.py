@@ -82,10 +82,21 @@ def extract_post_data(msg, username):
         post_id = data_post.split("/")[-1]
         unique_id = f"{username}_{post_id}"
 
+        # استخراج النص مع الحفاظ على الروابط التشعبية المخفية في الكلمات
         text_el = msg.select_one(".tgme_widget_message_text")
-        text = text_el.get_text(separator="\n", strip=True) if text_el else ""
-
+        text = ""
         discovered = set()
+
+        if text_el:
+            for a_tag in text_el.select("a"):
+                href = a_tag.get("href", "")
+                link_text = a_tag.get_text(strip=True)
+                # إذا كانت الكلمة تحوي رابطاً داخلياً ومختلفاً عن النص المعروض (مثل: حمّل الآن)
+                if href and href != link_text and not link_text.startswith("@") and not link_text.startswith("#"):
+                    a_tag.replace_with(f"{link_text} ({href})")
+            
+            text = text_el.get_text(separator="\n", strip=True)
+
         if text:
             mentions = re.findall(r"@([a-zA-Z0-9_]{4,32})", text)
             for m in mentions:
