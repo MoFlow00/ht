@@ -129,7 +129,7 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def extract_and_push_explorer_data(posts_df):
-    """رادار شامل: مواقع AI، أدوات نادرة، مستودعات GitHub، وأوامر مطورين"""
+    """رادار حقيقي ونظيف: مواقع AI حقيقية، وأدوات تقنية نقية، ومستودعات GitHub"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -137,7 +137,7 @@ def extract_and_push_explorer_data(posts_df):
     if not (cf_token and cf_account and cf_kv_id):
         return
 
-    print("[*] Running Deep Multi-Asset Discovery (AI Tools, Web Gems, GitHub)...")
+    print("[*] Running Strict Multi-Asset Discovery...")
     sample_df = posts_df.head(SAMPLE_SCAN_LIMIT)
 
     ai_sites_counter = Counter()
@@ -155,40 +155,60 @@ def extract_and_push_explorer_data(posts_df):
     github_pattern = re.compile(r'github\.com/([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)', re.IGNORECASE)
     pkg_pattern = re.compile(r'(?:pip install|pkg install|apt install)\s+([a-zA-Z0-9_-]+)', re.IGNORECASE)
 
+    # قائمة استبعاد شاملة للمواقع العامة، الشات، المنصات الاجتماعية، المتاجر ومختصرات الروابط
     EXCLUDED_DOMAINS = {
         "t.me", "telegram.org", "youtube.com", "youtu.be", "twitter.com", "x.com",
         "facebook.com", "instagram.com", "tiktok.com", "amzn.to", "amazon.com",
-        "mediafire.com", "mega.nz", "drive.google.com"
+        "mediafire.com", "mega.nz", "drive.google.com", "play.google.com", "wa.me",
+        "whatsapp.com", "tiny.cc", "bit.ly", "cutt.ly", "redd.it", "reddit.com",
+        "amzlink.to", "aliexpress.com", "linkedin.com", "flipkart.com", "myntra.com"
     }
 
-    AI_KEYWORDS = ["ai", "gpt", "claude", "gemini", "deepseek", "llm", "agent", "model", "token", "prompt"]
+    # نمط صارم للذكاء الاصطناعي (كلمات كاملة ومستقلة لتفادي التطابق العشوائي)
+    AI_STRICT_REGEX = re.compile(
+        r'\b(chatgpt|openai|claude|gemini|deepseek|ollama|huggingface|midjourney|stablediffusion|llm|vllm|langchain|rag|lora|qwen|mistral)\b',
+        re.IGNORECASE
+    )
+
+    spam_pattern = re.compile('|'.join([re.escape(s) for s in HARD_SPAM_BLOCKLIST]), re.IGNORECASE)
+    chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
 
     for _, row in sample_df.iterrows():
-        text = str(row.get("text", "") or "")
+        text = str(row.get("text", "") or "").strip()
         username = str(row.get("username", "") or "").lower()
         if not text or text == "nan":
             continue
 
         text_lower = text.lower()
 
-        # 1. استخراج مواقع الذكاء الاصطناعي والمواقع الغريبة (Web Gems)
+        # طرد السبام والقمار فوراً من الاستكشاف
+        if spam_pattern.search(text_lower) or spam_pattern.search(username) or chinese_pattern.search(text):
+            continue
+
+        # 1. استخراج الروابط وتصنيفها بدقة
         found_urls = url_pattern.findall(text)
         for domain, path in found_urls:
-            dom = domain.lower().replace("www.", "")
+            dom = domain.lower().replace("www.", "").strip()
             if dom in EXCLUDED_DOMAINS or "github.com" in dom:
+                continue
+
+            # استبعاد النطاقات الفرعية العشوائية لخدمات جوجل ومواقع المراهنات
+            if any(dom.endswith(ext) for ext in [".google.com", ".live", ".in", ".xyz"]) and "ai" not in dom:
                 continue
 
             full_link = f"https://{dom}{path}" if path else f"https://{dom}"
             clean_link = full_link.split("?")[0].rstrip("/")
 
-            is_ai = any(k in dom or k in text_lower for k in AI_KEYWORDS)
+            is_ai_domain = any(term in dom for term in ["ai", "huggingface", "openai", "deepseek", "claude"])
+            is_ai_text = bool(AI_STRICT_REGEX.search(text_lower))
 
-            if is_ai:
+            if is_ai_domain or is_ai_text:
                 ai_sites_counter[dom] += 1
                 if dom not in ai_sites_meta:
                     ai_sites_meta[dom] = {"url": clean_link, "domain": dom, "sample": text[:130], "channel": username}
             else:
-                if any(tool_word in text_lower for tool_word in ["tool", "free", "api", "web", "app", "online", "generator"]):
+                # مواقع وأدوات حقيقية فقط (شرط وجود مؤشر أداة أو سكريبت)
+                if any(tool_word in text_lower for tool_word in ["api", "tool", "open source", "developer", "sdk", "linux"]):
                     web_gems_counter[dom] += 1
                     if dom not in web_gems_meta:
                         web_gems_meta[dom] = {"url": clean_link, "domain": dom, "sample": text[:130], "channel": username}
@@ -252,7 +272,7 @@ def extract_and_push_explorer_data(posts_df):
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
     res = requests.put(url, headers=headers, json=explorer_payload)
     if res.status_code == 200:
-        print(f"[✓] Multi-Asset Hub Synced: {len(top_ai_tools)} AI Sites, {len(top_web_gems)} Web Gems, {len(top_github)} Repos!")
+        print(f"[✓] Explorer Cleaned & Pushed: {len(top_ai_tools)} Genuine AI Sites, {len(top_web_gems)} Web Tools, {len(top_github)} Repos!")
 
 def push_to_cloudflare_kv(posts_df):
     """فلترة وضخ حتى 8,000 منشور نشط مع ترتيب قائم على الجودة والتفاعل"""
