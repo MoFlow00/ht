@@ -7,7 +7,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
-        /* Light Theme (Default) */
         :root {
             --bg-page: #f0f2f5;
             --bg-card: #ffffff;
@@ -26,7 +25,6 @@
             --theme-btn-text: #0f172a;
         }
 
-        /* Dark Theme */
         [data-theme="dark"] {
             --bg-page: #0b1120;
             --bg-card: #1e293b;
@@ -78,7 +76,7 @@
             margin: 0 auto;
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 8px;
         }
 
         .header-top-row {
@@ -135,9 +133,7 @@
             transition: border-color 0.2s ease;
         }
 
-        .search-box-wrap input:focus {
-            border-color: var(--primary);
-        }
+        .search-box-wrap input:focus { border-color: var(--primary); }
 
         .search-box-wrap button {
             background: var(--primary);
@@ -148,11 +144,35 @@
             font-weight: 700;
             font-size: 0.88rem;
             cursor: pointer;
-            transition: background 0.2s;
         }
 
-        .search-box-wrap button:hover {
-            background: var(--primary-hover);
+        /* تنسيق شريط الهاشتاجات */
+        .hashtags-bar {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            scrollbar-width: none; /* Firefox */
+            padding-bottom: 2px;
+        }
+        
+        .hashtags-bar::-webkit-scrollbar { display: none; /* Chrome/Safari */ }
+
+        .hashtag-pill {
+            background: var(--theme-btn-bg);
+            color: var(--primary);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            white-space: nowrap;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .hashtag-pill:hover {
+            border-color: var(--primary);
+            background: var(--input-bg);
         }
 
         .feed-container {
@@ -172,7 +192,6 @@
             display: flex;
             flex-direction: column;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-            transition: opacity 0.3s ease, transform 0.3s ease;
         }
 
         .card-header {
@@ -202,27 +221,11 @@
             font-size: 0.95rem;
         }
 
-        [data-theme="dark"] .channel-avatar {
-            color: #f8fafc;
-        }
+        [data-theme="dark"] .channel-avatar { color: #f8fafc; }
 
-        .author-text {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .channel-name {
-            color: var(--text-main);
-            text-decoration: none;
-            font-weight: 700;
-            font-size: 0.95rem;
-        }
-
-        .post-time {
-            color: var(--text-sub);
-            font-size: 0.75rem;
-            margin-top: 2px;
-        }
+        .author-text { display: flex; flex-direction: column; }
+        .channel-name { color: var(--text-main); text-decoration: none; font-weight: 700; font-size: 0.95rem; }
+        .post-time { color: var(--text-sub); font-size: 0.75rem; margin-top: 2px; }
 
         .btn-trash {
             background: transparent;
@@ -235,41 +238,14 @@
             align-items: center;
             justify-content: center;
             color: var(--text-sub);
-            transition: all 0.2s;
         }
 
-        .btn-trash:hover {
-            background: var(--danger-bg);
-            color: var(--danger);
-        }
+        .btn-trash:hover { background: var(--danger-bg); color: var(--danger); }
+        .btn-trash svg { width: 18px; height: 18px; fill: currentColor; }
 
-        .btn-trash svg {
-            width: 18px;
-            height: 18px;
-            fill: currentColor;
-        }
-
-        .media-container {
-            width: 100%;
-            background: #000;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .media-container img {
-            width: 100%;
-            max-height: 480px;
-            object-fit: contain;
-            display: block;
-        }
-
-        .media-container iframe {
-            width: 100%;
-            min-height: 350px;
-            border: none;
-            background: #000;
-        }
+        .media-container { width: 100%; background: #000; display: flex; justify-content: center; align-items: center; }
+        .media-container img { width: 100%; max-height: 480px; object-fit: contain; display: block; }
+        .media-container iframe { width: 100%; min-height: 350px; border: none; background: #000; }
 
         .card-body {
             padding: 14px;
@@ -280,14 +256,8 @@
             color: var(--text-main);
         }
 
-        .card-body a {
-            color: var(--primary);
-            text-decoration: none;
-        }
-
-        .card-body a:hover {
-            text-decoration: underline;
-        }
+        .card-body a { color: var(--primary); text-decoration: none; }
+        .card-body a:hover { text-decoration: underline; }
 
         .btn-toggle-more {
             background: transparent;
@@ -311,19 +281,9 @@
             color: var(--text-sub);
         }
 
-        .card-footer a {
-            color: var(--primary);
-            text-decoration: none;
-            font-weight: 600;
-        }
-
-        .status-box {
-            text-align: center;
-            padding: 20px 10px;
-            color: var(--text-sub);
-            font-size: 0.9rem;
-        }
-
+        .card-footer a { color: var(--primary); text-decoration: none; font-weight: 600; }
+        .status-box { text-align: center; padding: 20px 10px; color: var(--text-sub); font-size: 0.9rem; }
+        
         .spinner {
             width: 22px;
             height: 22px;
@@ -333,10 +293,7 @@
             animation: spin 0.8s linear infinite;
             margin: 0 auto 8px;
         }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -345,14 +302,14 @@
         <div class="header-content">
             <div class="header-top-row">
                 <span class="admin-badge" id="adminBadge">🛡️ Admin Mode</span>
-                <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()">
-                    🌙 Dark
-                </button>
+                <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()">🌙 Dark</button>
             </div>
             <div class="search-box-wrap">
                 <input type="text" id="searchInput" placeholder="Search posts..." onkeypress="if(event.key === 'Enter') triggerSearch()">
                 <button onclick="triggerSearch()">Search</button>
             </div>
+            <!-- شريط الهاشتاجات التريند -->
+            <div class="hashtags-bar" id="hashtagsBar"></div>
         </div>
     </header>
 
@@ -365,20 +322,39 @@
 
     <script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
-        
-        // Admin verification
-        const SECRET_KEY = "admin2026";
-        const urlParams = new URLSearchParams(window.location.search);
-        let isAdmin = (urlParams.get("admin") === SECRET_KEY) || (sessionStorage.getItem("is_admin") === "true");
-        if (urlParams.get("admin") === SECRET_KEY) {
-            sessionStorage.setItem("is_admin", "true");
+        const ADMIN_HASH = "d16c5b9671d15db53047d7c67c5bf183f064894e63711311029415c1d8174488";
+
+        let isAdmin = false;
+        let currentPage = 1;
+        let isFetching = false;
+        let hasMore = true;
+        let activeQuery = "";
+
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
-        if (isAdmin) {
-            document.getElementById("adminBadge").style.display = "inline-block";
+        async function checkAdminStatus() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const inputPass = urlParams.get("admin");
+            if (inputPass) {
+                const computed = await sha256(inputPass.trim());
+                if (computed === ADMIN_HASH) {
+                    isAdmin = true;
+                    sessionStorage.setItem("is_admin", "true");
+                }
+            } else if (sessionStorage.getItem("is_admin") === "true") {
+                isAdmin = true;
+            }
+
+            if (isAdmin) {
+                document.getElementById("adminBadge").style.display = "inline-block";
+            }
         }
 
-        // Theme Switcher (Default: Light)
         function initTheme() {
             const savedTheme = localStorage.getItem("app_theme") || "light";
             document.documentElement.setAttribute("data-theme", savedTheme);
@@ -395,19 +371,10 @@
 
         function updateThemeButton(theme) {
             const btn = document.getElementById("themeToggleBtn");
-            if (theme === "dark") {
-                btn.innerHTML = "☀️ Light";
-            } else {
-                btn.innerHTML = "🌙 Dark";
-            }
+            btn.innerHTML = theme === "dark" ? "☀️ Light" : "🌙 Dark";
         }
 
         initTheme();
-
-        let currentPage = 1;
-        let isFetching = false;
-        let hasMore = true;
-        let activeQuery = "";
 
         function getRandomStartPage() {
             return Math.floor(Math.random() * 25) + 1;
@@ -430,6 +397,16 @@
                 const url = `${API_BASE}/api/feed?page=${currentPage}&q=${encodeURIComponent(activeQuery)}`;
                 const res = await fetch(url);
                 const data = await res.json();
+
+                // عرض الهاشتاجات لو موجودة في الاستجابة (في الصفحة الأولى فقط)
+                if (data.top_hashtags && data.top_hashtags.length > 0) {
+                    const hashContainer = document.getElementById("hashtagsBar");
+                    hashContainer.innerHTML = data.top_hashtags.map(tag => 
+                        `<span class="hashtag-pill" onclick="searchHashtag('${tag}')">${tag}</span>`
+                    ).join('');
+                } else if (isReset && !activeQuery) {
+                    document.getElementById("hashtagsBar").innerHTML = "";
+                }
 
                 if (data.posts && data.posts.length > 0) {
                     renderPosts(data.posts);
@@ -573,13 +550,23 @@
             fetchFeed(true);
         }
 
+        // دالة جديدة للبحث المباشر عند الضغط على الهاشتاج
+        window.searchHashtag = function(tag) {
+            document.getElementById("searchInput").value = tag;
+            activeQuery = tag;
+            fetchFeed(true);
+        };
+
         window.addEventListener("scroll", () => {
             if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
                 if (!isFetching && hasMore) fetchFeed(false);
             }
         });
 
-        window.addEventListener("DOMContentLoaded", () => fetchFeed(true));
+        window.addEventListener("DOMContentLoaded", async () => {
+            await checkAdminStatus();
+            fetchFeed(true);
+        });
     </script>
 </body>
 </html>
