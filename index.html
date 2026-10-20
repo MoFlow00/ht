@@ -354,39 +354,38 @@
         Loading posts...
     </div>
 
-    <script>
+<script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
-        const ADMIN_HASH = "d16c5b9671d15db53047d7c67c5bf183f064894e63711311029415c1d8174488";
+
+        // استخراج المفتاح المدخل من الرابط أو الجلسة (بدون كتابة أي سر داخل الكود)
+        const urlParams = new URLSearchParams(window.location.search);
+        let adminToken = urlParams.get("admin") || sessionStorage.getItem("admin_token") || "";
 
         let isAdmin = false;
         let currentPage = 1;
         let isFetching = false;
         let hasMore = true;
         let activeQuery = "";
-        let activeLang = ""; // متغير اللغة المحددة
+        let activeLang = "";
 
-        async function sha256(message) {
-            const msgBuffer = new TextEncoder().encode(message);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-        }
-
-        async function checkAdminStatus() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const inputPass = urlParams.get("admin");
-            if (inputPass) {
-                const computed = await sha256(inputPass.trim());
-                if (computed === ADMIN_HASH) {
+        // التحقق الآمن من الخادم السحابي
+        async function verifyAdminWithServer() {
+            if (!adminToken) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/verify_admin`, {
+                    headers: { "X-Admin-Key": adminToken }
+                });
+                const data = await res.json();
+                if (data.is_admin) {
                     isAdmin = true;
-                    sessionStorage.setItem("is_admin", "true");
+                    sessionStorage.setItem("admin_token", adminToken);
+                    const badge = document.getElementById("adminBadge");
+                    if (badge) badge.style.display = "inline-block";
+                } else {
+                    sessionStorage.removeItem("admin_token");
                 }
-            } else if (sessionStorage.getItem("is_admin") === "true") {
-                isAdmin = true;
-            }
-
-            if (isAdmin) {
-                document.getElementById("adminBadge").style.display = "inline-block";
+            } catch (e) {
+                console.error("Auth check failed:", e);
             }
         }
 
@@ -406,7 +405,7 @@
 
         function updateThemeButton(theme) {
             const btn = document.getElementById("themeToggleBtn");
-            btn.innerHTML = theme === "dark" ? "☀️ Light" : "🌙 Dark";
+            if (btn) btn.innerHTML = theme === "dark" ? "☀️ Light" : "🌙 Dark";
         }
 
         initTheme();
@@ -415,11 +414,10 @@
             return Math.floor(Math.random() * 25) + 1;
         }
 
-        // تغيير اللغة وتحديث الفيد
         window.setLang = function(lang, btnElement) {
             activeLang = lang;
             document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
-            if(btnElement) btnElement.classList.add('active');
+            if (btnElement) btnElement.classList.add('active');
             fetchFeed(true);
         };
 
@@ -428,7 +426,7 @@
             isFetching = true;
 
             const statusEl = document.getElementById("statusBox");
-            statusEl.style.display = "block";
+            if (statusEl) statusEl.style.display = "block";
 
             if (isReset) {
                 currentPage = activeQuery.trim() ? 1 : getRandomStartPage();
@@ -437,18 +435,20 @@
             }
 
             try {
-                // إرسال اللغة ضمن الرابط للـ Worker
                 const url = `${API_BASE}/api/feed?page=${currentPage}&q=${encodeURIComponent(activeQuery)}&lang=${activeLang}`;
                 const res = await fetch(url);
                 const data = await res.json();
 
                 if (data.top_hashtags && data.top_hashtags.length > 0) {
                     const hashContainer = document.getElementById("hashtagsBar");
-                    hashContainer.innerHTML = data.top_hashtags.map(tag => 
-                        `<span class="hashtag-pill" onclick="searchHashtag('${tag}')">${tag}</span>`
-                    ).join('');
+                    if (hashContainer) {
+                        hashContainer.innerHTML = data.top_hashtags.map(tag => 
+                            `<span class="hashtag-pill" onclick="searchHashtag('${tag}')">${tag}</span>`
+                        ).join('');
+                    }
                 } else if (isReset && !activeQuery) {
-                    document.getElementById("hashtagsBar").innerHTML = "";
+                    const hashContainer = document.getElementById("hashtagsBar");
+                    if (hashContainer) hashContainer.innerHTML = "";
                 }
 
                 if (data.posts && data.posts.length > 0) {
@@ -461,17 +461,17 @@
                         isFetching = false;
                         return fetchFeed(true);
                     }
-                    document.getElementById("feed").innerHTML = '<div class="status-box">No matching posts found for this language/search.</div>';
+                    document.getElementById("feed").innerHTML = '<div class="status-box">No matching posts found.</div>';
                 }
 
                 if (!hasMore) {
-                    statusEl.innerText = "You have reached the end of the feed";
+                    if (statusEl) statusEl.innerText = "You have reached the end of the feed";
                 } else {
-                    statusEl.style.display = "none";
+                    if (statusEl) statusEl.style.display = "none";
                 }
             } catch (err) {
                 console.error("Fetch error:", err);
-                statusEl.innerText = "Failed to connect to the server. Please try again.";
+                if (statusEl) statusEl.innerText = "Failed to connect to the server.";
             } finally {
                 isFetching = false;
             }
@@ -483,7 +483,7 @@
             posts.forEach(p => {
                 const card = document.createElement("article");
                 card.className = "card";
-                card.setAttribute("data-username", p.username.toLowerCase());
+                card.setAttribute("data-username", (p.username || "").toLowerCase());
 
                 let mediaHtml = "";
                 const isVideo = p.media_type === "video" || (p.video && p.video.trim() !== "");
@@ -582,7 +582,11 @@
             setTimeout(() => cards.forEach(c => c.remove()), 300);
 
             try {
-                await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(username)}`, { method: "POST" });
+                // إرسال السيكرت كي الآمن في ترويسة الطلب
+                await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(username)}`, {
+                    method: "POST",
+                    headers: { "X-Admin-Key": adminToken }
+                });
             } catch (e) {
                 console.error("Purge error:", e);
             }
@@ -605,10 +609,11 @@
             }
         });
 
-        window.addEventListener("DOMContentLoaded", async () => {
-            await checkAdminStatus();
+        // التحقق من الصلاحية مع السيرفر أولاً ثم جلب المنشورات
+        (async () => {
+            await verifyAdminWithServer();
             fetchFeed(true);
-        });
+        })();
     </script>
 </body>
 </html>
