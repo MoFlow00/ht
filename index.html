@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DevRadar • Multi-Asset Intelligence</title>
+    <title>DevRadar • Telegram Intelligence Hub</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -79,7 +79,6 @@
 
         .container-box { max-width: 650px; margin: 12px auto; padding: 0 10px; display: flex; flex-direction: column; gap: 12px; }
 
-        /* البطاقات */
         .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
         .card-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); }
         .channel-info { display: flex; align-items: center; gap: 10px; }
@@ -97,13 +96,11 @@
         .card-body { padding: 14px; font-size: 0.95rem; line-height: 1.6; word-break: break-word; white-space: pre-wrap; }
         .card-body a { color: var(--primary); text-decoration: none; }
 
-        /* زر Show More */
         .btn-toggle-more { background: transparent; border: none; color: var(--primary); font-weight: 700; font-size: 0.88rem; cursor: pointer; padding: 6px 0 0; display: inline-block; }
 
         .card-footer { display: flex; justify-content: space-between; padding: 10px 14px; background: var(--card-footer-bg); border-top: 1px solid var(--border); font-size: 0.82rem; color: var(--text-sub); }
         .card-footer a { color: var(--primary); text-decoration: none; font-weight: 600; }
 
-        /* أقسام الـ Discovery Hub */
         .explorer-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin-bottom: 12px; }
         .explorer-title { font-size: 0.98rem; font-weight: 700; color: var(--primary); display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
 
@@ -230,7 +227,6 @@
             }
         };
 
-        // عرض كروت الـ AI والمواقع الغريبة و GitHub
         async function loadExplorerData() {
             const explorerView = document.getElementById("explorerView");
             const statusEl = document.getElementById("statusBox");
@@ -299,6 +295,14 @@
             }
         }
 
+        window.setLang = function(lang, btnElement) {
+            activeLang = lang;
+            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+            if (btnElement) btnElement.classList.add('active');
+            currentPage = 1;
+            fetchFeed(true);
+        };
+
         async function fetchFeed(isReset = false) {
             if (isFetching || (!hasMore && !isReset)) return;
             isFetching = true;
@@ -307,7 +311,11 @@
             if (statusEl) statusEl.style.display = "block";
 
             if (isReset) {
-                currentPage = activeQuery.trim() ? 1 : Math.floor(Math.random() * 50) + 1;
+                if (!activeQuery.trim() && !activeLang) {
+                    currentPage = Math.floor(Math.random() * 40) + 1;
+                } else {
+                    currentPage = 1;
+                }
                 hasMore = true;
                 document.getElementById("feedView").innerHTML = "";
             }
@@ -331,6 +339,11 @@
                     currentPage++;
                     hasMore = data.has_more;
                 } else if (isReset) {
+                    if (currentPage > 1) {
+                        currentPage = 1;
+                        isFetching = false;
+                        return fetchFeed(true);
+                    }
                     document.getElementById("feedView").innerHTML = '<div class="status-box">No matching posts found.</div>';
                 }
 
@@ -346,7 +359,6 @@
             }
         }
 
-        // رندر البوستات مع استرجاع ميزة Show More بالكامل
         function renderPosts(posts) {
             const feed = document.getElementById("feedView");
 
@@ -383,7 +395,6 @@
                     </button>
                 ` : '';
 
-                // معالجة الـ 250 حرف وزر Show More
                 const fullRawText = p.text || "";
                 let bodyHtml = "";
 
@@ -441,13 +452,6 @@
             if (!str) return "";
             return str.replace(/(https?:\/\/[^\s]+)/g, url => `<a href="${url}" target="_blank">${url}</a>`);
         }
-
-        window.setLang = function(lang, btnElement) {
-            activeLang = lang;
-            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
-            if (btnElement) btnElement.classList.add('active');
-            fetchFeed(true);
-        };
 
         window.triggerSearch = function() {
             activeQuery = document.getElementById("searchInput").value;
