@@ -3,26 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Telegram Feed</title>
+    <title>DevRadar • Telegram Intelligence</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-page: #f0f2f5;
+            --bg-page: #f8fafc;
             --bg-card: #ffffff;
             --border: #e2e8f0;
-            --primary: #0088cc;
-            --primary-hover: #0077b5;
+            --primary: #0284c7;
+            --primary-hover: #0369a1;
             --text-main: #0f172a;
             --text-sub: #64748b;
             --danger: #ef4444;
             --danger-bg: #fee2e2;
-            --input-bg: #f8fafc;
+            --input-bg: #ffffff;
             --card-footer-bg: #f8fafc;
             --header-bg: rgba(255, 255, 255, 0.96);
             --avatar-bg: #e0f2fe;
-            --theme-btn-bg: #e2e8f0;
+            --theme-btn-bg: #f1f5f9;
             --theme-btn-text: #0f172a;
+            --badge-bg: #f1f5f9;
         }
 
         [data-theme="dark"] {
@@ -35,12 +36,13 @@
             --text-sub: #94a3b8;
             --danger: #ef4444;
             --danger-bg: rgba(239, 68, 68, 0.2);
-            --input-bg: #020617;
-            --card-footer-bg: rgba(0, 0, 0, 0.25);
+            --input-bg: #0f172a;
+            --card-footer-bg: rgba(0, 0, 0, 0.2);
             --header-bg: rgba(15, 23, 42, 0.95);
             --avatar-bg: #0369a1;
             --theme-btn-bg: #334155;
             --theme-btn-text: #f8fafc;
+            --badge-bg: #334155;
         }
 
         * {
@@ -55,7 +57,7 @@
             background-color: var(--bg-page);
             color: var(--text-main);
             min-height: 100vh;
-            padding-bottom: 60px;
+            padding-bottom: 70px;
             transition: background-color 0.2s ease, color 0.2s ease;
         }
 
@@ -66,13 +68,12 @@
             background: var(--header-bg);
             backdrop-filter: blur(10px);
             border-bottom: 1px solid var(--border);
-            padding: 8px 12px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-            transition: background 0.2s ease, border-color 0.2s ease;
+            padding: 10px 14px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.03);
         }
 
         .header-content {
-            max-width: 600px;
+            max-width: 650px;
             margin: 0 auto;
             display: flex;
             flex-direction: column;
@@ -85,35 +86,42 @@
             align-items: center;
         }
 
-        .admin-badge {
-            display: none;
-            font-size: 0.72rem;
-            color: #0369a1;
-            background: #e0f2fe;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-weight: 700;
+        /* شريط التنقل بين الفيد والاستكشاف */
+        .nav-tabs {
+            display: flex;
+            background: var(--badge-bg);
+            padding: 3px;
+            border-radius: 8px;
+            gap: 2px;
         }
 
-        [data-theme="dark"] .admin-badge {
-            background: #0369a1;
-            color: #e0f2fe;
+        .nav-tab-btn {
+            background: transparent;
+            border: none;
+            padding: 5px 14px;
+            border-radius: 6px;
+            font-size: 0.82rem;
+            font-weight: 700;
+            color: var(--text-sub);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .nav-tab-btn.active {
+            background: var(--bg-card);
+            color: var(--primary);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
 
         .theme-toggle-btn {
             background: var(--theme-btn-bg);
             color: var(--theme-btn-text);
             border: none;
-            padding: 4px 10px;
+            padding: 5px 10px;
             border-radius: 6px;
             font-size: 0.8rem;
             font-weight: 600;
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            margin-left: auto;
-            transition: all 0.2s;
         }
 
         .search-box-wrap {
@@ -126,11 +134,10 @@
             background: var(--input-bg);
             border: 1px solid var(--border);
             color: var(--text-main);
-            padding: 7px 12px;
+            padding: 8px 12px;
             border-radius: 8px;
             font-size: 0.9rem;
             outline: none;
-            transition: border-color 0.2s ease;
         }
 
         .search-box-wrap input:focus { border-color: var(--primary); }
@@ -164,7 +171,6 @@
             font-weight: 600;
             cursor: pointer;
             white-space: nowrap;
-            transition: all 0.2s;
         }
 
         .lang-btn.active {
@@ -191,23 +197,18 @@
             white-space: nowrap;
             cursor: pointer;
             border: 1px solid var(--primary);
-            transition: all 0.2s;
         }
 
-        .hashtag-pill:hover {
-            background: var(--primary);
-            color: #fff;
-        }
-
-        .feed-container {
-            max-width: 600px;
-            margin: 10px auto;
-            padding: 0 8px;
+        .container-box {
+            max-width: 650px;
+            margin: 12px auto;
+            padding: 0 10px;
             display: flex;
             flex-direction: column;
             gap: 12px;
         }
 
+        /* بطاقات الفيد */
         .card {
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -215,7 +216,7 @@
             overflow: hidden;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
         }
 
         .card-header {
@@ -245,30 +246,21 @@
             font-size: 0.95rem;
         }
 
-        [data-theme="dark"] .channel-avatar { color: #f8fafc; }
-
-        .author-text { display: flex; flex-direction: column; }
         .channel-name { color: var(--text-main); text-decoration: none; font-weight: 700; font-size: 0.95rem; }
         .post-time { color: var(--text-sub); font-size: 0.75rem; margin-top: 2px; }
 
         .btn-trash {
             background: transparent;
             border: none;
-            width: 34px;
-            height: 34px;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
             cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
             color: var(--text-sub);
-            transition: all 0.2s;
         }
-
         .btn-trash:hover { background: var(--danger-bg); color: var(--danger); }
-        .btn-trash svg { width: 18px; height: 18px; fill: currentColor; }
+        .btn-trash svg { width: 17px; height: 17px; fill: currentColor; }
 
-        .media-container { width: 100%; background: #000; display: flex; justify-content: center; align-items: center; }
         .media-container img { width: 100%; max-height: 480px; object-fit: contain; display: block; }
         .media-container iframe { width: 100%; min-height: 350px; border: none; background: #000; }
 
@@ -278,46 +270,97 @@
             line-height: 1.6;
             word-break: break-word;
             white-space: pre-wrap;
-            color: var(--text-main);
         }
-
         .card-body a { color: var(--primary); text-decoration: none; }
-        .card-body a:hover { text-decoration: underline; }
-
-        .btn-toggle-more {
-            background: transparent;
-            border: none;
-            color: var(--primary);
-            font-weight: 700;
-            font-size: 0.88rem;
-            cursor: pointer;
-            padding: 4px 0 0;
-            display: inline-block;
-        }
 
         .card-footer {
             display: flex;
             justify-content: space-between;
-            align-items: center;
             padding: 10px 14px;
             background: var(--card-footer-bg);
             border-top: 1px solid var(--border);
             font-size: 0.82rem;
             color: var(--text-sub);
         }
-
         .card-footer a { color: var(--primary); text-decoration: none; font-weight: 600; }
-        .status-box { text-align: center; padding: 20px 10px; color: var(--text-sub); font-size: 0.9rem; }
-        
-        .spinner {
-            width: 22px;
-            height: 22px;
-            border: 3px solid var(--border);
-            border-top: 3px solid var(--primary);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin: 0 auto 8px;
+
+        /* شاشة الـ Explorer المخصصة */
+        .explorer-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 12px;
         }
+
+        .explorer-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: var(--primary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .repo-card {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .repo-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .repo-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: var(--primary);
+            text-decoration: none;
+        }
+
+        .mention-badge {
+            background: var(--badge-bg);
+            color: var(--text-sub);
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .repo-preview {
+            font-size: 0.82rem;
+            color: var(--text-sub);
+            line-height: 1.4;
+        }
+
+        .pill-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .tag-badge {
+            background: var(--input-bg);
+            border: 1px solid var(--border);
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--text-main);
+        }
+
+        .status-box { text-align: center; padding: 20px 10px; color: var(--text-sub); font-size: 0.9rem; }
+        .spinner { width: 22px; height: 22px; border: 3px solid var(--border); border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 8px; }
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
@@ -326,49 +369,57 @@
     <header>
         <div class="header-content">
             <div class="header-top-row">
-                <span class="admin-badge" id="adminBadge">🛡️ Admin Mode</span>
+                <div class="nav-tabs">
+                    <button class="nav-tab-btn active" id="tabFeedBtn" onclick="switchView('feed')">⚡ Live Feed</button>
+                    <button class="nav-tab-btn" id="tabExplorerBtn" onclick="switchView('explorer')">🔍 Discovery Hub</button>
+                </div>
                 <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()">🌙 Dark</button>
             </div>
-            
-            <div class="search-box-wrap">
-                <input type="text" id="searchInput" placeholder="Search posts..." onkeypress="if(event.key === 'Enter') triggerSearch()">
-                <button onclick="triggerSearch()">Search</button>
-            </div>
 
-            <!-- أزرار اختيار اللغة -->
-            <div class="lang-filters">
-                <button class="lang-btn active" onclick="setLang('', this)">🌐 All</button>
-                <button class="lang-btn" onclick="setLang('ar', this)">🇦🇪 Arabic</button>
-                <button class="lang-btn" onclick="setLang('en', this)">🇬🇧 English</button>
-                <button class="lang-btn" onclick="setLang('other', this)">🔣 Others</button>
-            </div>
+            <!-- عناصر التحكم الخاصة بالفيد -->
+            <div id="feedControls" style="display: flex; flex-direction: column; gap: 8px;">
+                <div class="search-box-wrap">
+                    <input type="text" id="searchInput" placeholder="Search curated posts..." onkeypress="if(event.key === 'Enter') triggerSearch()">
+                    <button onclick="triggerSearch()">Search</button>
+                </div>
 
-            <div class="hashtags-bar" id="hashtagsBar"></div>
+                <div class="lang-filters">
+                    <button class="lang-btn active" onclick="setLang('', this)">🌐 All</button>
+                    <button class="lang-btn" onclick="setLang('ar', this)">🇦🇪 Arabic</button>
+                    <button class="lang-btn" onclick="setLang('en', this)">🇬🇧 English</button>
+                    <button class="lang-btn" onclick="setLang('other', this)">🔣 Others</button>
+                </div>
+
+                <div class="hashtags-bar" id="hashtagsBar"></div>
+            </div>
         </div>
     </header>
 
-    <main class="feed-container" id="feed"></main>
+    <!-- شاشة الـ Feed -->
+    <main class="container-box" id="feedView"></main>
+
+    <!-- شاشة الـ Discovery Hub -->
+    <main class="container-box" id="explorerView" style="display: none;"></main>
 
     <div class="status-box" id="statusBox">
         <div class="spinner"></div>
-        Loading posts...
+        Loading data...
     </div>
 
-<script>
+    <script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
-
-        // استخراج المفتاح المدخل من الرابط أو الجلسة (بدون كتابة أي سر داخل الكود)
         const urlParams = new URLSearchParams(window.location.search);
         let adminToken = urlParams.get("admin") || sessionStorage.getItem("admin_token") || "";
 
         let isAdmin = false;
+        let currentView = "feed";
         let currentPage = 1;
         let isFetching = false;
         let hasMore = true;
         let activeQuery = "";
         let activeLang = "";
 
-        // التحقق الآمن من الخادم السحابي
+        // فحص صلاحية الأدمن مع الخادم السحابي
         async function verifyAdminWithServer() {
             if (!adminToken) return;
             try {
@@ -379,14 +430,8 @@
                 if (data.is_admin) {
                     isAdmin = true;
                     sessionStorage.setItem("admin_token", adminToken);
-                    const badge = document.getElementById("adminBadge");
-                    if (badge) badge.style.display = "inline-block";
-                } else {
-                    sessionStorage.removeItem("admin_token");
                 }
-            } catch (e) {
-                console.error("Auth check failed:", e);
-            }
+            } catch (e) {}
         }
 
         function initTheme() {
@@ -407,20 +452,87 @@
             const btn = document.getElementById("themeToggleBtn");
             if (btn) btn.innerHTML = theme === "dark" ? "☀️ Light" : "🌙 Dark";
         }
-
         initTheme();
 
-        function getRandomStartPage() {
-            return Math.floor(Math.random() * 25) + 1;
-        }
+        // التبديل بين الـ Live Feed والـ Explorer
+        window.switchView = function(view) {
+            currentView = view;
+            const feedView = document.getElementById("feedView");
+            const explorerView = document.getElementById("explorerView");
+            const feedControls = document.getElementById("feedControls");
+            const tabFeedBtn = document.getElementById("tabFeedBtn");
+            const tabExplorerBtn = document.getElementById("tabExplorerBtn");
 
-        window.setLang = function(lang, btnElement) {
-            activeLang = lang;
-            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
-            if (btnElement) btnElement.classList.add('active');
-            fetchFeed(true);
+            if (view === "feed") {
+                feedView.style.display = "flex";
+                explorerView.style.display = "none";
+                feedControls.style.display = "flex";
+                tabFeedBtn.classList.add("active");
+                tabExplorerBtn.classList.remove("active");
+            } else {
+                feedView.style.display = "none";
+                explorerView.style.display = "flex";
+                feedControls.style.display = "none";
+                tabFeedBtn.classList.remove("active");
+                tabExplorerBtn.classList.add("active");
+                loadExplorerData();
+            }
         };
 
+        // تحميل وعرض بيانات الكيانات والمستودعات المكتشفة
+        async function loadExplorerData() {
+            const explorerView = document.getElementById("explorerView");
+            const statusEl = document.getElementById("statusBox");
+            explorerView.innerHTML = "";
+            statusEl.style.display = "block";
+
+            try {
+                const res = await fetch(`${API_BASE}/api/explorer`);
+                const data = await res.json();
+                statusEl.style.display = "none";
+
+                let html = `
+                    <div class="explorer-section">
+                        <div class="explorer-title">📦 Top Discovered GitHub Repositories (${data.top_repos ? data.top_repos.length : 0})</div>
+                        ${(data.top_repos || []).map(r => `
+                            <div class="repo-card">
+                                <div class="repo-header">
+                                    <a href="${r.url}" target="_blank" class="repo-name">${r.repo}</a>
+                                    <span class="mention-badge">🔥 ${r.mentions} mentions</span>
+                                </div>
+                                <div class="repo-preview">${r.preview ? r.preview.replace(/(https?:\/\/[^\s]+)/g, '') : ''}</div>
+                                <div style="font-size:0.75rem; color:var(--text-sub);">Source Channel: <b>@${r.channel}</b></div>
+                            </div>
+                        `).join('')}
+                    </div>
+
+                    <div class="explorer-section">
+                        <div class="explorer-title">⚡ Top Termux / Python Packages & Tools</div>
+                        <div class="pill-grid">
+                            ${(data.top_packages || []).map(p => `
+                                <div class="tag-badge">⚙️ ${p.package} <b style="color:var(--primary); font-size:0.7rem;">(${p.mentions})</b></div>
+                            `).join('')}
+                        </div>
+                    </div>
+
+                    <div class="explorer-section">
+                        <div class="explorer-title">📡 Top Active Tech Channels Directory</div>
+                        <div class="pill-grid">
+                            ${(data.top_tech_channels || []).map(c => `
+                                <a href="https://t.me/${c.username}" target="_blank" class="tag-badge" style="text-decoration:none; color:var(--primary);">
+                                    @${c.username} <span style="color:var(--text-sub); font-size:0.7rem;">(${c.tech_posts} posts)</span>
+                                </a>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+                explorerView.innerHTML = html;
+            } catch (err) {
+                statusEl.innerText = "Failed to load Explorer data.";
+            }
+        }
+
+        // جلب تغذية الـ Live Feed
         async function fetchFeed(isReset = false) {
             if (isFetching || (!hasMore && !isReset)) return;
             isFetching = true;
@@ -429,9 +541,9 @@
             if (statusEl) statusEl.style.display = "block";
 
             if (isReset) {
-                currentPage = activeQuery.trim() ? 1 : getRandomStartPage();
+                currentPage = activeQuery.trim() ? 1 : Math.floor(Math.random() * 25) + 1;
                 hasMore = true;
-                document.getElementById("feed").innerHTML = "";
+                document.getElementById("feedView").innerHTML = "";
             }
 
             try {
@@ -446,9 +558,6 @@
                             `<span class="hashtag-pill" onclick="searchHashtag('${tag}')">${tag}</span>`
                         ).join('');
                     }
-                } else if (isReset && !activeQuery) {
-                    const hashContainer = document.getElementById("hashtagsBar");
-                    if (hashContainer) hashContainer.innerHTML = "";
                 }
 
                 if (data.posts && data.posts.length > 0) {
@@ -456,12 +565,7 @@
                     currentPage++;
                     hasMore = data.has_more;
                 } else if (isReset) {
-                    if (!activeQuery.trim() && currentPage > 1) {
-                        currentPage = 1;
-                        isFetching = false;
-                        return fetchFeed(true);
-                    }
-                    document.getElementById("feed").innerHTML = '<div class="status-box">No matching posts found.</div>';
+                    document.getElementById("feedView").innerHTML = '<div class="status-box">No matching posts found.</div>';
                 }
 
                 if (!hasMore) {
@@ -470,7 +574,6 @@
                     if (statusEl) statusEl.style.display = "none";
                 }
             } catch (err) {
-                console.error("Fetch error:", err);
                 if (statusEl) statusEl.innerText = "Failed to connect to the server.";
             } finally {
                 isFetching = false;
@@ -478,7 +581,7 @@
         }
 
         function renderPosts(posts) {
-            const feed = document.getElementById("feed");
+            const feed = document.getElementById("feedView");
 
             posts.forEach(p => {
                 const card = document.createElement("article");
@@ -506,41 +609,26 @@
                 const viewsCount = Number(p.views || 0).toLocaleString();
 
                 const trashBtnHtml = isAdmin ? `
-                    <button class="btn-trash" title="Permanently delete channel" onclick="purgeChannel('${p.username}')">
+                    <button class="btn-trash" title="Delete Channel" onclick="purgeChannel('${p.username}')">
                         <svg viewBox="0 0 24 24">
                             <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
                         </svg>
                     </button>
                 ` : '';
 
-                const fullRawText = p.text || "";
-                let bodyHtml = "";
-
-                if (fullRawText.length > 250) {
-                    const shortText = fullRawText.substring(0, 250) + "...";
-                    bodyHtml = `
-                        <span class="text-preview">${formatBody(shortText)}</span>
-                        <span class="text-full" style="display: none;">${formatBody(fullRawText)}</span>
-                        <br>
-                        <button class="btn-toggle-more" onclick="toggleReadMore(this)">Show more...</button>
-                    `;
-                } else {
-                    bodyHtml = formatBody(fullRawText);
-                }
-
                 card.innerHTML = `
                     <div class="card-header">
                         <div class="channel-info">
                             <div class="channel-avatar">${(p.username || "T")[0].toUpperCase()}</div>
-                            <div class="author-text">
+                            <div>
                                 <a href="https://t.me/${p.username}" target="_blank" class="channel-name">@${p.username}</a>
-                                <span class="post-time">${postTime}</span>
+                                <div class="post-time">${postTime}</div>
                             </div>
                         </div>
                         ${trashBtnHtml}
                     </div>
                     ${mediaHtml}
-                    <div class="card-body">${bodyHtml}</div>
+                    <div class="card-body">${formatBody(p.text || "")}</div>
                     <div class="card-footer">
                         <span>👁️ ${viewsCount} views</span>
                         <a href="https://t.me/${p.username}/${p.post_id}" target="_blank">Open on Telegram ↗</a>
@@ -550,52 +638,22 @@
             });
         }
 
-        window.toggleReadMore = function(btn) {
-            const cardBody = btn.parentElement;
-            const previewEl = cardBody.querySelector(".text-preview");
-            const fullEl = cardBody.querySelector(".text-full");
-
-            if (fullEl.style.display === "none") {
-                fullEl.style.display = "inline";
-                previewEl.style.display = "none";
-                btn.innerText = "Show less";
-            } else {
-                fullEl.style.display = "none";
-                previewEl.style.display = "inline";
-                btn.innerText = "Show more...";
-            }
-        };
-
         function formatBody(str) {
             if (!str) return "";
             return str.replace(/(https?:\/\/[^\s]+)/g, url => `<a href="${url}" target="_blank">${url}</a>`);
         }
 
-        async function purgeChannel(username) {
-            if (!isAdmin) return;
+        window.setLang = function(lang, btnElement) {
+            activeLang = lang;
+            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+            if (btnElement) btnElement.classList.add('active');
+            fetchFeed(true);
+        };
 
-            const cards = document.querySelectorAll(`[data-username="${username.toLowerCase()}"]`);
-            cards.forEach(c => {
-                c.style.transform = 'scale(0.95)';
-                c.style.opacity = '0';
-            });
-            setTimeout(() => cards.forEach(c => c.remove()), 300);
-
-            try {
-                // إرسال السيكرت كي الآمن في ترويسة الطلب
-                await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(username)}`, {
-                    method: "POST",
-                    headers: { "X-Admin-Key": adminToken }
-                });
-            } catch (e) {
-                console.error("Purge error:", e);
-            }
-        }
-
-        function triggerSearch() {
+        window.triggerSearch = function() {
             activeQuery = document.getElementById("searchInput").value;
             fetchFeed(true);
-        }
+        };
 
         window.searchHashtag = function(tag) {
             document.getElementById("searchInput").value = tag;
@@ -603,13 +661,24 @@
             fetchFeed(true);
         };
 
+        async function purgeChannel(username) {
+            if (!isAdmin) return;
+            const cards = document.querySelectorAll(`[data-username="${username.toLowerCase()}"]`);
+            cards.forEach(c => c.remove());
+            try {
+                await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(username)}`, {
+                    method: "POST",
+                    headers: { "X-Admin-Key": adminToken }
+                });
+            } catch (e) {}
+        }
+
         window.addEventListener("scroll", () => {
-            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
+            if (currentView === "feed" && (window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
                 if (!isFetching && hasMore) fetchFeed(false);
             }
         });
 
-        // التحقق من الصلاحية مع السيرفر أولاً ثم جلب المنشورات
         (async () => {
             await verifyAdminWithServer();
             fetchFeed(true);
