@@ -146,32 +146,57 @@
             cursor: pointer;
         }
 
+        .lang-filters {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            scrollbar-width: none;
+        }
+        .lang-filters::-webkit-scrollbar { display: none; }
+
+        .lang-btn {
+            background: var(--theme-btn-bg);
+            color: var(--text-main);
+            border: 1px solid transparent;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+
+        .lang-btn.active {
+            background: var(--primary);
+            color: #fff;
+            border-color: var(--primary);
+        }
+
         .hashtags-bar {
             display: flex;
             gap: 6px;
             overflow-x: auto;
             scrollbar-width: none;
-            padding-bottom: 2px;
         }
-        
         .hashtags-bar::-webkit-scrollbar { display: none; }
 
         .hashtag-pill {
-            background: var(--theme-btn-bg);
+            background: transparent;
             color: var(--primary);
-            padding: 4px 10px;
+            padding: 2px 8px;
             border-radius: 12px;
             font-size: 0.75rem;
             font-weight: 700;
             white-space: nowrap;
             cursor: pointer;
-            border: 1px solid transparent;
+            border: 1px solid var(--primary);
             transition: all 0.2s;
         }
 
         .hashtag-pill:hover {
-            border-color: var(--primary);
-            background: var(--input-bg);
+            background: var(--primary);
+            color: #fff;
         }
 
         .feed-container {
@@ -237,6 +262,7 @@
             align-items: center;
             justify-content: center;
             color: var(--text-sub);
+            transition: all 0.2s;
         }
 
         .btn-trash:hover { background: var(--danger-bg); color: var(--danger); }
@@ -303,10 +329,20 @@
                 <span class="admin-badge" id="adminBadge">🛡️ Admin Mode</span>
                 <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()">🌙 Dark</button>
             </div>
+            
             <div class="search-box-wrap">
                 <input type="text" id="searchInput" placeholder="Search posts..." onkeypress="if(event.key === 'Enter') triggerSearch()">
                 <button onclick="triggerSearch()">Search</button>
             </div>
+
+            <!-- أزرار اختيار اللغة -->
+            <div class="lang-filters">
+                <button class="lang-btn active" onclick="setLang('', this)">🌐 All</button>
+                <button class="lang-btn" onclick="setLang('ar', this)">🇦🇪 Arabic</button>
+                <button class="lang-btn" onclick="setLang('en', this)">🇬🇧 English</button>
+                <button class="lang-btn" onclick="setLang('other', this)">🔣 Others</button>
+            </div>
+
             <div class="hashtags-bar" id="hashtagsBar"></div>
         </div>
     </header>
@@ -320,18 +356,38 @@
 
     <script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
-        
-        // 🔐 فحص فوري ومباشر للأدمن (Synchronous) بدون تأخير
-        const SECRET_KEY = "admin2026";
-        const urlParams = new URLSearchParams(window.location.search);
-        
-        let isAdmin = (urlParams.get("admin") === SECRET_KEY) || (sessionStorage.getItem("is_admin") === "true");
-        if (urlParams.get("admin") === SECRET_KEY) {
-            sessionStorage.setItem("is_admin", "true");
+        const ADMIN_HASH = "d16c5b9671d15db53047d7c67c5bf183f064894e63711311029415c1d8174488";
+
+        let isAdmin = false;
+        let currentPage = 1;
+        let isFetching = false;
+        let hasMore = true;
+        let activeQuery = "";
+        let activeLang = ""; // متغير اللغة المحددة
+
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
         }
 
-        if (isAdmin) {
-            document.getElementById("adminBadge").style.display = "inline-block";
+        async function checkAdminStatus() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const inputPass = urlParams.get("admin");
+            if (inputPass) {
+                const computed = await sha256(inputPass.trim());
+                if (computed === ADMIN_HASH) {
+                    isAdmin = true;
+                    sessionStorage.setItem("is_admin", "true");
+                }
+            } else if (sessionStorage.getItem("is_admin") === "true") {
+                isAdmin = true;
+            }
+
+            if (isAdmin) {
+                document.getElementById("adminBadge").style.display = "inline-block";
+            }
         }
 
         function initTheme() {
@@ -355,14 +411,17 @@
 
         initTheme();
 
-        let currentPage = 1;
-        let isFetching = false;
-        let hasMore = true;
-        let activeQuery = "";
-
         function getRandomStartPage() {
             return Math.floor(Math.random() * 25) + 1;
         }
+
+        // تغيير اللغة وتحديث الفيد
+        window.setLang = function(lang, btnElement) {
+            activeLang = lang;
+            document.querySelectorAll('.lang-btn').forEach(btn => btn.classList.remove('active'));
+            if(btnElement) btnElement.classList.add('active');
+            fetchFeed(true);
+        };
 
         async function fetchFeed(isReset = false) {
             if (isFetching || (!hasMore && !isReset)) return;
@@ -378,7 +437,8 @@
             }
 
             try {
-                const url = `${API_BASE}/api/feed?page=${currentPage}&q=${encodeURIComponent(activeQuery)}`;
+                // إرسال اللغة ضمن الرابط للـ Worker
+                const url = `${API_BASE}/api/feed?page=${currentPage}&q=${encodeURIComponent(activeQuery)}&lang=${activeLang}`;
                 const res = await fetch(url);
                 const data = await res.json();
 
@@ -401,7 +461,7 @@
                         isFetching = false;
                         return fetchFeed(true);
                     }
-                    document.getElementById("feed").innerHTML = '<div class="status-box">No matching posts found.</div>';
+                    document.getElementById("feed").innerHTML = '<div class="status-box">No matching posts found for this language/search.</div>';
                 }
 
                 if (!hasMore) {
@@ -545,7 +605,8 @@
             }
         });
 
-        window.addEventListener("DOMContentLoaded", () => {
+        window.addEventListener("DOMContentLoaded", async () => {
+            await checkAdminStatus();
             fetchFeed(true);
         });
     </script>
