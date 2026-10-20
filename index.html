@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>DevRadar • Telegram Intelligence</title>
+    <title>DevRadar • Telegram Intelligence Hub</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <style>
@@ -86,7 +86,6 @@
             align-items: center;
         }
 
-        /* شريط التنقل بين الفيد والاستكشاف */
         .nav-tabs {
             display: flex;
             background: var(--badge-bg);
@@ -208,7 +207,6 @@
             gap: 12px;
         }
 
-        /* بطاقات الفيد */
         .card {
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -284,7 +282,7 @@
         }
         .card-footer a { color: var(--primary); text-decoration: none; font-weight: 600; }
 
-        /* شاشة الـ Explorer المخصصة */
+        /* ستايل شاشة الاستكشاف (Discovery Hub) */
         .explorer-section {
             background: var(--bg-card);
             border: 1px solid var(--border);
@@ -376,10 +374,9 @@
                 <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()">🌙 Dark</button>
             </div>
 
-            <!-- عناصر التحكم الخاصة بالفيد -->
             <div id="feedControls" style="display: flex; flex-direction: column; gap: 8px;">
                 <div class="search-box-wrap">
-                    <input type="text" id="searchInput" placeholder="Search curated posts..." onkeypress="if(event.key === 'Enter') triggerSearch()">
+                    <input type="text" id="searchInput" placeholder="Search 8,000+ curated posts..." onkeypress="if(event.key === 'Enter') triggerSearch()">
                     <button onclick="triggerSearch()">Search</button>
                 </div>
 
@@ -395,10 +392,7 @@
         </div>
     </header>
 
-    <!-- شاشة الـ Feed -->
     <main class="container-box" id="feedView"></main>
-
-    <!-- شاشة الـ Discovery Hub -->
     <main class="container-box" id="explorerView" style="display: none;"></main>
 
     <div class="status-box" id="statusBox">
@@ -419,7 +413,6 @@
         let activeQuery = "";
         let activeLang = "";
 
-        // فحص صلاحية الأدمن مع الخادم السحابي
         async function verifyAdminWithServer() {
             if (!adminToken) return;
             try {
@@ -454,7 +447,6 @@
         }
         initTheme();
 
-        // التبديل بين الـ Live Feed والـ Explorer
         window.switchView = function(view) {
             currentView = view;
             const feedView = document.getElementById("feedView");
@@ -479,7 +471,6 @@
             }
         };
 
-        // تحميل وعرض بيانات الكيانات والمستودعات المكتشفة
         async function loadExplorerData() {
             const explorerView = document.getElementById("explorerView");
             const statusEl = document.getElementById("statusBox");
@@ -501,7 +492,7 @@
                                     <span class="mention-badge">🔥 ${r.mentions} mentions</span>
                                 </div>
                                 <div class="repo-preview">${r.preview ? r.preview.replace(/(https?:\/\/[^\s]+)/g, '') : ''}</div>
-                                <div style="font-size:0.75rem; color:var(--text-sub);">Source Channel: <b>@${r.channel}</b></div>
+                                <div style="font-size:0.75rem; color:var(--text-sub);">Source: <b>@${r.channel}</b></div>
                             </div>
                         `).join('')}
                     </div>
@@ -532,7 +523,6 @@
             }
         }
 
-        // جلب تغذية الـ Live Feed
         async function fetchFeed(isReset = false) {
             if (isFetching || (!hasMore && !isReset)) return;
             isFetching = true;
@@ -541,7 +531,8 @@
             if (statusEl) statusEl.style.display = "block";
 
             if (isReset) {
-                currentPage = activeQuery.trim() ? 1 : Math.floor(Math.random() * 25) + 1;
+                // تصفح عشوائي ذكي عبر الـ 8,000 منشور
+                currentPage = activeQuery.trim() ? 1 : Math.floor(Math.random() * 50) + 1;
                 hasMore = true;
                 document.getElementById("feedView").innerHTML = "";
             }
