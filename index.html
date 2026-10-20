@@ -146,16 +146,15 @@
             cursor: pointer;
         }
 
-        /* تنسيق شريط الهاشتاجات */
         .hashtags-bar {
             display: flex;
             gap: 6px;
             overflow-x: auto;
-            scrollbar-width: none; /* Firefox */
+            scrollbar-width: none;
             padding-bottom: 2px;
         }
         
-        .hashtags-bar::-webkit-scrollbar { display: none; /* Chrome/Safari */ }
+        .hashtags-bar::-webkit-scrollbar { display: none; }
 
         .hashtag-pill {
             background: var(--theme-btn-bg);
@@ -308,7 +307,6 @@
                 <input type="text" id="searchInput" placeholder="Search posts..." onkeypress="if(event.key === 'Enter') triggerSearch()">
                 <button onclick="triggerSearch()">Search</button>
             </div>
-            <!-- شريط الهاشتاجات التريند -->
             <div class="hashtags-bar" id="hashtagsBar"></div>
         </div>
     </header>
@@ -322,37 +320,18 @@
 
     <script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
-        const ADMIN_HASH = "d16c5b9671d15db53047d7c67c5bf183f064894e63711311029415c1d8174488";
-
-        let isAdmin = false;
-        let currentPage = 1;
-        let isFetching = false;
-        let hasMore = true;
-        let activeQuery = "";
-
-        async function sha256(message) {
-            const msgBuffer = new TextEncoder().encode(message);
-            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        
+        // 🔐 فحص فوري ومباشر للأدمن (Synchronous) بدون تأخير
+        const SECRET_KEY = "admin2026";
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        let isAdmin = (urlParams.get("admin") === SECRET_KEY) || (sessionStorage.getItem("is_admin") === "true");
+        if (urlParams.get("admin") === SECRET_KEY) {
+            sessionStorage.setItem("is_admin", "true");
         }
 
-        async function checkAdminStatus() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const inputPass = urlParams.get("admin");
-            if (inputPass) {
-                const computed = await sha256(inputPass.trim());
-                if (computed === ADMIN_HASH) {
-                    isAdmin = true;
-                    sessionStorage.setItem("is_admin", "true");
-                }
-            } else if (sessionStorage.getItem("is_admin") === "true") {
-                isAdmin = true;
-            }
-
-            if (isAdmin) {
-                document.getElementById("adminBadge").style.display = "inline-block";
-            }
+        if (isAdmin) {
+            document.getElementById("adminBadge").style.display = "inline-block";
         }
 
         function initTheme() {
@@ -376,6 +355,11 @@
 
         initTheme();
 
+        let currentPage = 1;
+        let isFetching = false;
+        let hasMore = true;
+        let activeQuery = "";
+
         function getRandomStartPage() {
             return Math.floor(Math.random() * 25) + 1;
         }
@@ -398,7 +382,6 @@
                 const res = await fetch(url);
                 const data = await res.json();
 
-                // عرض الهاشتاجات لو موجودة في الاستجابة (في الصفحة الأولى فقط)
                 if (data.top_hashtags && data.top_hashtags.length > 0) {
                     const hashContainer = document.getElementById("hashtagsBar");
                     hashContainer.innerHTML = data.top_hashtags.map(tag => 
@@ -550,7 +533,6 @@
             fetchFeed(true);
         }
 
-        // دالة جديدة للبحث المباشر عند الضغط على الهاشتاج
         window.searchHashtag = function(tag) {
             document.getElementById("searchInput").value = tag;
             activeQuery = tag;
@@ -563,8 +545,7 @@
             }
         });
 
-        window.addEventListener("DOMContentLoaded", async () => {
-            await checkAdminStatus();
+        window.addEventListener("DOMContentLoaded", () => {
             fetchFeed(true);
         });
     </script>
