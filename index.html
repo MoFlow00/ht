@@ -399,7 +399,7 @@
                 const viewsCount = Number(p.views || 0).toLocaleString();
 
                 const trashBtnHtml = isAdmin ? `
-                    <button class="btn-trash" title="Delete Channel" onclick="purgeChannel(${JSON.stringify(username)})">
+                    <button class="btn-trash" title="Delete Channel" data-purge-username="${escapeHtml(username)}">
                         <svg viewBox="0 0 24 24">
                             <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
                         </svg>
@@ -504,6 +504,11 @@
                 statusEl.style.display = "block";
             }
         }
+
+        document.addEventListener("click", event => {
+            const button = event.target.closest(".btn-trash[data-purge-username]");
+            if (button) purgeChannel(button.dataset.purgeUsername);
+        });
 
         window.addEventListener("scroll", () => {
             if (currentView === "feed" && (window.innerHeight + window.scrollY) >= document.body.offsetHeight - 500) {
