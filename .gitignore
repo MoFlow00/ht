@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+data_sync/
+crawler_output/
