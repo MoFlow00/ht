@@ -342,7 +342,7 @@ def extract_and_push_explorer_data(posts_df):
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
     res = requests.put(url, headers=headers, json=explorer_payload)
     if res.status_code == 200:
-        print(f"[✓] Explorer Smart-Pushed: {len(top_ai_tools)} AI Tools, {len(top_web_gems)} Web Gems, {len(top_github)} Repos, {len(last_links)} recent links!")
+        print(f"[✓] Explorer Smart-Pushed: {len(top_ai_tools)} AI Tools, {len(top_web_gems)} Web Gems, {len(top_github)} Repos, {len(top_100_domains)} domains discovered!")
 
 def push_to_cloudflare_kv(posts_df):
     """فلترة وضخ حتى 8,000 منشور نشط مع ترتيب قائم على الجودة والتفاعل"""
