@@ -7,6 +7,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from huggingface_hub import HfApi, hf_hub_download
 from purge_rules import build_matcher, channels_to_purge, match_terms, normalize_username
+from explorer_scoring import (AI_SCORE_THRESHOLD, build_model_patterns, load_model_terms, rank_items, score_ai_link)
 
 # ==================== إعدادات البيئة ====================
 HF_REPO_ID = os.getenv("HF_REPO_ID", "Moo408/dat-9f82c4")
@@ -167,7 +168,7 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def extract_and_push_explorer_data(posts_df):
-    """رادار حقيقي ونظيف: مواقع AI حقيقية، وأدوات تقنية نقية، ومستودعات GitHub"""
+    """رادار أذكى: تصنيف دقيق لأدوات الذكاء الاصطناعي + روابط آخر 100 مستخرجة"""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
@@ -175,142 +176,161 @@ def extract_and_push_explorer_data(posts_df):
     if not (cf_token and cf_account and cf_kv_id):
         return
 
-    print("[*] Running Strict Multi-Asset Discovery...")
-    sample_df = posts_df.head(SAMPLE_SCAN_LIMIT)
+    print("[*] Running Smarter Multi-Asset Discovery...")
+    sample_df = posts_df.copy()
+    if "date" in sample_df.columns:
+        try:
+            sample_df = sample_df.sort_values(by="date", ascending=False)
+        except Exception:
+            pass
+    sample_df = sample_df.head(SAMPLE_SCAN_LIMIT)
+
+    model_terms = load_model_terms("ai_models_catalog.json")
+    model_patterns = build_model_patterns(model_terms)
+    print(f"[*] Loaded {len(model_terms)} AI model/vendor terms for classification.")
 
     ai_sites_counter = Counter()
+    ai_sites_channels = {}
     ai_sites_meta = {}
-
     web_gems_counter = Counter()
+    web_gems_channels = {}
     web_gems_meta = {}
-
     github_counter = Counter()
+    github_channels = {}
     github_meta = {}
-
     tools_counter = Counter()
 
     url_pattern = re.compile(r'https?://([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(/[^\s]*)?', re.IGNORECASE)
     github_pattern = re.compile(r'github\.com/([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)', re.IGNORECASE)
     pkg_pattern = re.compile(r'(?:pip install|pkg install|apt install)\s+([a-zA-Z0-9_-]+)', re.IGNORECASE)
 
-    # قائمة استبعاد شاملة للمواقع العامة، الشات، المنصات الاجتماعية، المتاجر ومختصرات الروابط
     EXCLUDED_DOMAINS = {
         "t.me", "telegram.org", "youtube.com", "youtu.be", "twitter.com", "x.com",
         "facebook.com", "instagram.com", "tiktok.com", "amzn.to", "amazon.com",
         "mediafire.com", "mega.nz", "drive.google.com", "play.google.com", "wa.me",
         "whatsapp.com", "tiny.cc", "bit.ly", "cutt.ly", "redd.it", "reddit.com",
-        "amzlink.to", "aliexpress.com", "linkedin.com", "flipkart.com", "myntra.com"
+        "aliexpress.com", "linkedin.com", "flipkart.com", "myntra.com", "temu.com",
+        "shein.com", "google.com", "bing.com", "yahoo.com"
     }
-
-    # نمط صارم للذكاء الاصطناعي (كلمات كاملة ومستقلة لتفادي التطابق العشوائي)
-    AI_STRICT_REGEX = re.compile(
-        r'\b(chatgpt|openai|claude|gemini|deepseek|ollama|huggingface|midjourney|stablediffusion|llm|vllm|langchain|rag|lora|qwen|mistral)\b',
-        re.IGNORECASE
-    )
 
     spam_pattern = re.compile('|'.join([re.escape(s) for s in HARD_SPAM_BLOCKLIST]), re.IGNORECASE)
     chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
 
+    recent_links = []
+    seen_links = set()
+
     for _, row in sample_df.iterrows():
         text = str(row.get("text", "") or "").strip()
-        username = str(row.get("username", "") or "").lower()
+        username = str(row.get("username", "") or "").strip().lower()
+        post_id = str(row.get("post_id", "") or "").strip()
+        date_val = str(row.get("date", "") or "").strip()
         if not text or text == "nan":
             continue
 
         text_lower = text.lower()
-
-        # طرد السبام والقمار فوراً من الاستكشاف
         if spam_pattern.search(text_lower) or spam_pattern.search(username) or chinese_pattern.search(text):
             continue
 
-        # 1. استخراج الروابط وتصنيفها بدقة
-        found_urls = url_pattern.findall(text)
-        for domain, path in found_urls:
+        for domain, path in url_pattern.findall(text):
             dom = domain.lower().replace("www.", "").strip()
             if dom in EXCLUDED_DOMAINS or "github.com" in dom:
                 continue
 
-            # استبعاد النطاقات الفرعية العشوائية لخدمات جوجل ومواقع المراهنات
-            if any(dom.endswith(ext) for ext in [".google.com", ".live", ".in", ".xyz"]) and "ai" not in dom:
-                continue
-
             full_link = f"https://{dom}{path}" if path else f"https://{dom}"
             clean_link = full_link.split("?")[0].rstrip("/")
+            if clean_link in seen_links:
+                continue
+            seen_links.add(clean_link)
 
-            is_ai_domain = any(term in dom for term in ["ai", "huggingface", "openai", "deepseek", "claude"])
-            is_ai_text = bool(AI_STRICT_REGEX.search(text_lower))
+            if username:
+                recent_links.append({
+                    "url": clean_link,
+                    "domain": dom,
+                    "channel": username,
+                    "post_id": post_id,
+                    "post_url": f"https://t.me/{username}/{post_id}" if post_id else f"https://t.me/{username}",
+                    "date": date_val,
+                    "preview": text[:160].replace("\n", " ")
+                })
 
-            if is_ai_domain or is_ai_text:
+            score = score_ai_link(dom, text_lower, model_patterns)
+            if score >= AI_SCORE_THRESHOLD:
                 ai_sites_counter[dom] += 1
+                ai_sites_channels.setdefault(dom, set()).add(username)
                 if dom not in ai_sites_meta:
-                    ai_sites_meta[dom] = {"url": clean_link, "domain": dom, "sample": text[:130], "channel": username}
-            else:
-                # مواقع وأدوات حقيقية فقط (شرط وجود مؤشر أداة أو سكريبت)
-                if any(tool_word in text_lower for tool_word in ["api", "tool", "open source", "developer", "sdk", "linux"]):
-                    web_gems_counter[dom] += 1
-                    if dom not in web_gems_meta:
-                        web_gems_meta[dom] = {"url": clean_link, "domain": dom, "sample": text[:130], "channel": username}
+                    ai_sites_meta[dom] = {"url": clean_link, "domain": dom, "sample": text[:150], "channel": username, "score": score}
+            elif any(word in text_lower for word in ["api", "tool", "open source", "developer", "sdk", "cli", "framework", "library", "utility", "formatter", "converter", "editor", "generator", "checker", "validator", "parser", "viewer", "boilerplate", "documentation", "reference"]):
+                web_gems_counter[dom] += 1
+                web_gems_channels.setdefault(dom, set()).add(username)
+                if dom not in web_gems_meta:
+                    web_gems_meta[dom] = {"url": clean_link, "domain": dom, "sample": text[:150], "channel": username}
 
-        # 2. مستودعات GitHub
         for repo in github_pattern.findall(text):
             clean_repo = repo.strip().rstrip("/").rstrip(".")
             if len(clean_repo.split("/")) == 2 and not clean_repo.endswith((".git", ".png", ".jpg")):
                 github_counter[clean_repo] += 1
+                github_channels.setdefault(clean_repo, set()).add(username)
                 if clean_repo not in github_meta:
-                    github_meta[clean_repo] = {"name": clean_repo, "url": f"https://github.com/{clean_repo}", "sample": text[:130], "channel": username}
+                    github_meta[clean_repo] = {"name": clean_repo, "url": f"https://github.com/{clean_repo}", "sample": text[:150], "channel": username}
 
-        # 3. أوامر بايثون وترمكس
         for pkg in pkg_pattern.findall(text):
             clean_pkg = pkg.strip().lower()
             if 3 <= len(clean_pkg) <= 30:
                 tools_counter[clean_pkg] += 1
 
     top_ai_tools = []
-    for dom, count in ai_sites_counter.most_common(25):
+    for score, dom, count, unique_ch in rank_items(ai_sites_counter, ai_sites_channels)[:35]:
         meta = ai_sites_meta.get(dom, {})
         top_ai_tools.append({
             "title": dom,
             "url": meta.get("url", f"https://{dom}"),
             "mentions": count,
+            "unique_channels": unique_ch,
+            "score": meta.get("score", round(score, 2)),
             "preview": meta.get("sample", ""),
             "channel": meta.get("channel", "")
         })
 
     top_web_gems = []
-    for dom, count in web_gems_counter.most_common(25):
+    for score, dom, count, unique_ch in rank_items(web_gems_counter, web_gems_channels)[:35]:
         meta = web_gems_meta.get(dom, {})
         top_web_gems.append({
             "title": dom,
             "url": meta.get("url", f"https://{dom}"),
             "mentions": count,
+            "unique_channels": unique_ch,
             "preview": meta.get("sample", ""),
             "channel": meta.get("channel", "")
         })
 
     top_github = []
-    for repo, count in github_counter.most_common(25):
+    for score, repo, count, unique_ch in rank_items(github_counter, github_channels)[:35]:
         meta = github_meta.get(repo, {})
         top_github.append({
             "title": repo,
             "url": meta.get("url", f"https://github.com/{repo}"),
             "mentions": count,
+            "unique_channels": unique_ch,
             "preview": meta.get("sample", ""),
             "channel": meta.get("channel", "")
         })
+
+    last_links = sorted(recent_links, key=lambda item: item.get("date", ""), reverse=True)[:100]
 
     explorer_payload = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "top_ai_tools": top_ai_tools,
         "top_web_gems": top_web_gems,
         "top_repos": top_github,
-        "top_packages": [{"package": p, "mentions": c} for p, c in tools_counter.most_common(25)]
+        "top_packages": [{"package": p, "mentions": c} for p, c in tools_counter.most_common(40)],
+        "last_100_links": last_links
     }
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/curated_explorer_data"
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
     res = requests.put(url, headers=headers, json=explorer_payload)
     if res.status_code == 200:
-        print(f"[✓] Explorer Cleaned & Pushed: {len(top_ai_tools)} Genuine AI Sites, {len(top_web_gems)} Web Tools, {len(top_github)} Repos!")
+        print(f"[✓] Explorer Smart-Pushed: {len(top_ai_tools)} AI Tools, {len(top_web_gems)} Web Gems, {len(top_github)} Repos, {len(last_links)} recent links!")
 
 def push_to_cloudflare_kv(posts_df):
     """فلترة وضخ حتى 8,000 منشور نشط مع ترتيب قائم على الجودة والتفاعل"""

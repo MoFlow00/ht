@@ -1,0 +1,124 @@
+{
+  "language_models": {
+    "OpenAI": ["GPT", "o-series", "Codex", "o1", "o3", "o4", "gpt-4", "gpt-5"],
+    "Anthropic": ["Claude Opus", "Claude Sonnet", "Claude Haiku", "Claude"],
+    "Google": ["Gemini Pro", "Gemini Flash", "Gemma", "Gemini"],
+    "xAI": ["Grok"],
+    "DeepSeek": ["DeepSeek-V", "DeepSeek-R1", "DeepSeek-Coder", "DeepSeek"],
+    "Alibaba": ["Qwen", "Qwen-Coder", "QwQ"],
+    "Meta": ["Llama"],
+    "Mistral AI": ["Mistral", "Mixtral", "Codestral"],
+    "Microsoft": ["Phi"],
+    "Cohere": ["Command", "Aya"],
+    "Amazon": ["Nova"],
+    "NVIDIA": ["Nemotron"],
+    "AI21 Labs": ["Jamba"],
+    "Z.ai": ["GLM"],
+    "Moonshot AI": ["Kimi"],
+    "MiniMax": ["MiniMax"],
+    "Baidu": ["ERNIE"],
+    "ByteDance": ["Doubao", "Seed"],
+    "Tencent": ["Hunyuan"],
+    "IBM": ["Granite"],
+    "BigCode": ["StarCoder"],
+    "SmolLM": ["SmolLM"]
+  },
+  "image_generation": {
+    "OpenAI": ["GPT Image"],
+    "Google": ["Imagen"],
+    "Black Forest Labs": ["FLUX"],
+    "Stability AI": ["Stable Diffusion", "Stable Diffusion XL"],
+    "Midjourney": ["Midjourney"],
+    "Adobe": ["Firefly"],
+    "Ideogram": ["Ideogram"],
+    "Recraft": ["Recraft"],
+    "Leonardo AI": ["Leonardo"],
+    "Kwai": ["Kolors"],
+    "Playground": ["Playground"],
+    "ByteDance": ["Seedream"]
+  },
+  "video_generation": {
+    "OpenAI": ["Sora"],
+    "Google": ["Veo"],
+    "Runway": ["Gen-4"],
+    "Kuaishou": ["Kling"],
+    "Luma AI": ["Dream Machine", "Ray"],
+    "Pika": ["Pika"],
+    "MiniMax": ["Hailuo"],
+    "Alibaba": ["Wan"],
+    "ByteDance": ["Seedance"],
+    "Lightricks": ["LTX-Video"],
+    "Vidu": ["Vidu"],
+    "PixVerse": ["PixVerse"]
+  },
+  "audio_and_speech": {
+    "OpenAI": ["Whisper", "GPT audio models"],
+    "Google": ["Gemini Audio", "Chirp"],
+    "ElevenLabs": ["Eleven Multilingual", "Eleven Turbo"],
+    "Suno": ["Suno"],
+    "Udio": ["Udio"],
+    "Meta": ["MusicGen", "AudioCraft"],
+    "Stability AI": ["Stable Audio"],
+    "Coqui": ["XTTS"],
+    "Suno Research": ["Bark"],
+    "Kokoro": ["Kokoro TTS"],
+    "Deepgram": ["Nova"],
+    "Cartesia": ["Sonic"]
+  },
+  "coding_models": {
+    "OpenAI": ["GPT", "Codex"],
+    "Anthropic": ["Claude"],
+    "Google": ["Gemini", "CodeGemma"],
+    "DeepSeek": ["DeepSeek-Coder"],
+    "Alibaba": ["Qwen-Coder"],
+    "Mistral AI": ["Codestral"],
+    "BigCode": ["StarCoder", "StarCoder2"],
+    "Meta": ["Code Llama"],
+    "IBM": ["Granite Code"],
+    "Microsoft": ["Phi"],
+    "Z.ai": ["GLM"]
+  },
+  "embedding_and_retrieval": {
+    "BAAI": ["BGE", "BGE-M3", "BGE Reranker"],
+    "Microsoft": ["E5"],
+    "Google": ["Gecko"],
+    "Nomic": ["Nomic Embed"],
+    "OpenAI": ["Text Embedding"],
+    "Cohere": ["Embed", "Rerank"],
+    "Alibaba": ["GTE", "Qwen Embedding"]
+  },
+  "vision_and_multimodal": {
+    "OpenAI": ["GPT vision models"],
+    "Google": ["Gemini"],
+    "Alibaba": ["Qwen-VL"],
+    "Meta": ["ImageBind"],
+    "Google Research": ["SigLIP"],
+    "OpenAI Research": ["CLIP"],
+    "Meta Research": ["SAM", "DINOv2"],
+    "Ultralytics": ["YOLO"],
+    "Facebook AI": ["DETR"]
+  },
+  "translation_models": {
+    "Meta": ["NLLB", "SeamlessM4T"],
+    "Google": ["MADLAD-400"],
+    "Microsoft": ["Translator models"]
+  },
+  "time_series_and_forecasting": {
+    "Google": ["TimesFM", "TimesFM-2"],
+    "Amazon": ["Chronos", "Chronos-Bolt"],
+    "Salesforce": ["Moirai"],
+    "Nixtla": ["TimeGPT"]
+  },
+  "weather_models": {
+    "Google DeepMind": ["GraphCast"],
+    "Huawei": ["Pangu-Weather"],
+    "NVIDIA": ["FourCastNet"],
+    "ECMWF": ["AIFS"]
+  },
+  "robotics_and_actions": {
+    "Google DeepMind": ["RT-2", "RT-X"],
+    "Physical Intelligence": ["π0"],
+    "OpenVLA": ["OpenVLA"],
+    "NVIDIA": ["GR00T"]
+  }
+}
