@@ -4,6 +4,8 @@ from collections.abc import Iterable
 import json
 import re
 
+from collections import Counter
+
 KNOWN_AI_DOMAINS = {
     "chatgpt.com", "openai.com", "claude.ai", "gemini.google.com", "grok.com",
     "perplexity.ai", "cursor.com", "windsurf.com", "bolt.new", "v0.dev",
@@ -104,3 +106,26 @@ def rank_items(counter: dict, channels: dict) -> list[tuple[float, str, int, int
         ranked.append((score, key, mentions, unique_channels))
     ranked.sort(key=lambda row: (row[0], row[2], row[1]), reverse=True)
     return ranked
+
+
+def rank_top_domains(
+    counter: dict, channels: dict, limit: int = 100
+) -> list[dict]:
+    """Rank the most repeated domains across ALL channels, blending frequency
+    with channel diversity so a single spammy channel cannot take the list."""
+    ranked: list[dict] = []
+    for domain, mentions in counter.items():
+        if mentions < 1:
+            continue
+        unique_channels = len(channels.get(domain, set()))
+        score = mentions * 0.6 + unique_channels * 0.4
+        ranked.append(
+            {
+                "domain": domain,
+                "mentions": mentions,
+                "unique_channels": unique_channels,
+                "score": round(score, 2),
+            }
+        )
+    ranked.sort(key=lambda row: (row["score"], row["mentions"], len(row["domain"])), reverse=True)
+    return ranked[:limit]

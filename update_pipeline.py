@@ -7,7 +7,7 @@ from collections import Counter
 from datetime import datetime, timezone
 from huggingface_hub import HfApi, hf_hub_download
 from purge_rules import build_matcher, channels_to_purge, match_terms, normalize_username
-from explorer_scoring import (AI_SCORE_THRESHOLD, build_model_patterns, load_model_terms, rank_items, score_ai_link)
+from explorer_scoring import (AI_SCORE_THRESHOLD, build_model_patterns, load_model_terms, rank_items, rank_top_domains, score_ai_link)
 
 # ==================== إعدادات البيئة ====================
 HF_REPO_ID = os.getenv("HF_REPO_ID", "Moo408/dat-9f82c4")
@@ -198,6 +198,9 @@ def extract_and_push_explorer_data(posts_df):
     github_counter = Counter()
     github_channels = {}
     github_meta = {}
+    all_domains_counter = Counter()
+    all_domains_channels = {}
+    all_domains_meta = {}
     tools_counter = Counter()
 
     url_pattern = re.compile(r'https?://([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(/[^\s]*)?', re.IGNORECASE)
@@ -216,8 +219,8 @@ def extract_and_push_explorer_data(posts_df):
     spam_pattern = re.compile('|'.join([re.escape(s) for s in HARD_SPAM_BLOCKLIST]), re.IGNORECASE)
     chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
 
-    recent_links = []
     seen_links = set()
+
 
     for _, row in sample_df.iterrows():
         text = str(row.get("text", "") or "").strip()
@@ -242,16 +245,16 @@ def extract_and_push_explorer_data(posts_df):
                 continue
             seen_links.add(clean_link)
 
-            if username:
-                recent_links.append({
+            all_domains_counter[dom] += 1
+            all_domains_channels.setdefault(dom, set()).add(username)
+            if dom not in all_domains_meta:
+                all_domains_meta[dom] = {
                     "url": clean_link,
                     "domain": dom,
+                    "sample": text[:150],
                     "channel": username,
-                    "post_id": post_id,
-                    "post_url": f"https://t.me/{username}/{post_id}" if post_id else f"https://t.me/{username}",
                     "date": date_val,
-                    "preview": text[:160].replace("\n", " ")
-                })
+                }
 
             score = score_ai_link(dom, text_lower, model_patterns)
             if score >= AI_SCORE_THRESHOLD:
@@ -315,7 +318,16 @@ def extract_and_push_explorer_data(posts_df):
             "channel": meta.get("channel", "")
         })
 
-    last_links = sorted(recent_links, key=lambda item: item.get("date", ""), reverse=True)[:100]
+    top_100_domains = rank_top_domains(all_domains_counter, all_domains_channels)
+    for item in top_100_domains:
+        meta = all_domains_meta.get(item["domain"])
+        if meta:
+            item.update({
+                "url": meta["url"],
+                "sample": meta["sample"],
+                "channel": meta["channel"],
+                "date": meta["date"],
+            })
 
     explorer_payload = {
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -323,7 +335,7 @@ def extract_and_push_explorer_data(posts_df):
         "top_web_gems": top_web_gems,
         "top_repos": top_github,
         "top_packages": [{"package": p, "mentions": c} for p, c in tools_counter.most_common(40)],
-        "last_100_links": last_links
+        "top_100_domains": top_100_domains
     }
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/curated_explorer_data"
