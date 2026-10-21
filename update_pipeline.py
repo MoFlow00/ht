@@ -6,6 +6,7 @@ import pandas as pd
 from collections import Counter
 from datetime import datetime, timezone
 from huggingface_hub import HfApi, hf_hub_download
+from purge_rules import build_matcher, channels_to_purge, match_terms, normalize_username
 
 # ==================== إعدادات البيئة ====================
 HF_REPO_ID = os.getenv("HF_REPO_ID", "Moo408/dat-9f82c4")
@@ -27,30 +28,66 @@ HARD_SPAM_BLOCKLIST = [
     "betwinner", "melbet", "casino", "poker", "addlist/"
 ]
 
-def get_cloudflare_blacklist():
-    """جلب قائمة القنوات المحظورة مركزياً من Cloudflare KV لتطهيرها نهائياً"""
-    cf_token = os.getenv("CF_API_TOKEN")
+def cloudflare_blacklist_url():
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
+    if not (os.getenv("CF_API_TOKEN") and cf_account and cf_kv_id):
+        return None
+    return f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/blacklist"
 
-    if not (cf_token and cf_account and cf_kv_id):
+
+def get_cloudflare_blacklist(required=False):
+    """Load the persistent blacklist; fail closed when a safe sync requires it."""
+    url = cloudflare_blacklist_url()
+    cf_token = os.getenv("CF_API_TOKEN")
+    if not url:
+        if required:
+            raise RuntimeError("Cloudflare KV credentials are missing; refusing to sync without the persistent blacklist")
         return set()
 
-    url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/blacklist"
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
-
     try:
-        res = requests.get(url, headers=headers, timeout=15)
-        if res.status_code == 200:
-            bl_list = res.json()
-            if isinstance(bl_list, list):
-                blacklist_set = set(str(u).lower().strip() for u in bl_list if str(u).strip())
-                print(f"[*] Retrieved {len(blacklist_set)} blacklisted channels from Cloudflare KV.")
-                return blacklist_set
-    except Exception as e:
-        print(f"[-] Could not fetch blacklist from Cloudflare: {e}")
+        res = requests.get(url, headers=headers, timeout=20)
+        if res.status_code == 404:
+            print("[*] No Cloudflare blacklist exists yet; starting with an empty list.")
+            return set()
+        res.raise_for_status()
+        values = res.json()
+        if not isinstance(values, list):
+            raise ValueError("Cloudflare blacklist value must be a JSON array")
+        blacklist = {normalize_username(value) for value in values if normalize_username(value)}
+        print(f"[*] Retrieved {len(blacklist)} blacklisted channels from Cloudflare KV.")
+        return blacklist
+    except Exception as exc:
+        if required:
+            raise RuntimeError(f"Could not safely load Cloudflare blacklist: {exc}") from exc
+        print(f"[-] Could not fetch Cloudflare blacklist: {exc}")
+        return set()
 
-    return set()
+
+def put_cloudflare_blacklist(blacklist):
+    """Persist channel purges so Worker feeds and future sync runs keep them removed."""
+    url = cloudflare_blacklist_url()
+    if not url:
+        raise RuntimeError("Cannot persist purged channels: Cloudflare KV credentials are missing")
+    headers = {"Authorization": f"Bearer {os.getenv('CF_API_TOKEN')}", "Content-Type": "application/json"}
+    response = requests.put(url, headers=headers, data=json.dumps(sorted(blacklist)), timeout=30)
+    response.raise_for_status()
+    result = response.json()
+    if isinstance(result, dict) and result.get("success") is False:
+        raise RuntimeError(f"Cloudflare rejected blacklist update: {result.get('errors', result)}")
+    print(f"[✓] Persisted {len(blacklist)} blacklisted channels to Cloudflare KV.")
+
+
+def load_purge_rules(path="purge_rules.json"):
+    """Load exact whole-word/phrase channel purge rules from repository JSON."""
+    with open(path, "r", encoding="utf-8") as rules_file:
+        data = json.load(rules_file)
+    if not isinstance(data, dict) or not isinstance(data.get("terms"), list):
+        raise ValueError(f"{path} must contain a JSON object with a 'terms' array")
+    rules = build_matcher(data["terms"])
+    print(f"[*] Loaded {len(rules)} exact whole-word/phrase purge rules.")
+    return rules
 
 def load_user_keywords():
     """قراءة الكلمات المفتاحية من ملف interests.json حصراً"""
@@ -107,7 +144,8 @@ def sync_channels(blacklist):
 
     if blacklist and "username" in merged_c.columns:
         initial_c_count = len(merged_c)
-        merged_c = merged_c[~merged_c["username"].astype(str).str.lower().isin(blacklist)]
+        normalized_names = merged_c["username"].map(normalize_username)
+        merged_c = merged_c[~normalized_names.isin(blacklist)]
         purged_c = initial_c_count - len(merged_c)
         if purged_c > 0:
             print(f"[🔥] Permanently purged {purged_c:,} channels from c.parquet!")
@@ -345,25 +383,68 @@ def push_to_cloudflare_kv(posts_df):
     # تشغيل محرك استكشاف الكنوز والكيانات
     extract_and_push_explorer_data(posts_df)
 
-def sync_partitioned_posts(blacklist):
+def discover_purge_channels(manifest_data, new_posts_df, purge_rules, existing_manifest_years):
+    """Scan every known history partition plus newly crawled posts before modifying data."""
+    blocked = set()
+    for year, meta in manifest_data.items():
+        if not isinstance(meta, dict):
+            raise ValueError(f"Invalid manifest entry for year {year}")
+        filename = meta.get("file", f"posts_{year}.parquet")
+        chunk = pd.DataFrame()
+        if not new_posts_df.empty and "year_partition" in new_posts_df.columns:
+            chunk = new_posts_df[new_posts_df["year_partition"] == year].drop(columns=["year_partition"], errors="ignore")
+        existing = pd.DataFrame()
+        try:
+            path = hf_hub_download(repo_id=HF_REPO_ID, filename=filename, repo_type="dataset", token=HF_TOKEN)
+            existing = pd.read_parquet(path)
+        except Exception as exc:
+            if year in existing_manifest_years:
+                raise RuntimeError(f"Cannot safely inspect historical partition {filename}: {exc}") from exc
+        partition = pd.concat([existing, chunk], ignore_index=True)
+        if partition.empty:
+            continue
+        if "text" not in partition.columns:
+            raise ValueError(f"Partition {filename} has no text column; refusing cleanup")
+        records = partition[["username", "text"]].to_dict(orient="records") if "username" in partition.columns else [
+            {"text": text} for text in partition["text"]
+        ]
+        blocked.update(channels_to_purge(records, purge_rules))
+    return blocked
+
+
+def sync_partitioned_posts(blacklist, purge_rules):
     new_p_path = os.path.join(CRAWLER_DIR, "p.parquet")
     new_posts_df = pd.DataFrame()
     if os.path.exists(new_p_path):
         new_posts_df = pd.read_parquet(new_p_path)
 
-    manifest_data = {}
+    manifest_loaded = False
     try:
         m_path = hf_hub_download(repo_id=HF_REPO_ID, filename="manifest.json", repo_type="dataset", token=HF_TOKEN)
         with open(m_path, "r", encoding="utf-8") as f:
             manifest_data = json.load(f)
-    except Exception:
+        manifest_loaded = True
+    except Exception as exc:
+        if purge_rules:
+            raise RuntimeError(f"Cannot safely load full-history manifest: {exc}") from exc
         manifest_data = {"2026": {"file": "posts_2026.parquet"}}
+
+    if not isinstance(manifest_data, dict):
+        raise ValueError("Hugging Face manifest.json must be a JSON object")
+    existing_manifest_years = set(manifest_data) if manifest_loaded else set()
 
     if not new_posts_df.empty:
         new_posts_df["year_partition"] = new_posts_df["date"].apply(extract_year_safely)
         for y in new_posts_df["year_partition"].unique():
             if y not in manifest_data:
                 manifest_data[y] = {"file": f"posts_{y}.parquet"}
+
+    if purge_rules:
+        newly_blocked = discover_purge_channels(manifest_data, new_posts_df, purge_rules, existing_manifest_years) - blacklist
+        if newly_blocked:
+            blacklist.update(newly_blocked)
+            put_cloudflare_blacklist(blacklist)
+            print(f"[🔥] Exact rules matched and permanently blacklisted {len(newly_blocked):,} channels.")
 
     all_2026_df = pd.DataFrame()
     total_posts_all_years = 0
@@ -374,8 +455,9 @@ def sync_partitioned_posts(blacklist):
         try:
             year_path = hf_hub_download(repo_id=HF_REPO_ID, filename=partition_filename, repo_type="dataset", token=HF_TOKEN)
             existing_year_df = pd.read_parquet(year_path)
-        except Exception:
-            pass
+        except Exception as exc:
+            if year in existing_manifest_years:
+                raise RuntimeError(f"Cannot safely merge historical partition {partition_filename}: {exc}") from exc
 
         chunk_new = pd.DataFrame()
         if not new_posts_df.empty and "year_partition" in new_posts_df.columns:
@@ -390,12 +472,21 @@ def sync_partitioned_posts(blacklist):
         else:
             merged_year = merged_year.drop_duplicates(subset=["username", "post_id"], keep="last")
 
-        if blacklist and "username" in merged_year.columns:
-            initial_p_count = len(merged_year)
-            merged_year = merged_year[~merged_year["username"].astype(str).str.lower().isin(blacklist)]
-            purged_p = initial_p_count - len(merged_year)
-            if purged_p > 0:
-                print(f"[🔥] Permanently purged {purged_p:,} posts from {partition_filename}!")
+        initial_p_count = len(merged_year)
+        remove_rows = pd.Series(False, index=merged_year.index)
+        normalized_names = pd.Series("", index=merged_year.index)
+        if "username" in merged_year.columns:
+            normalized_names = merged_year["username"].map(normalize_username)
+            if blacklist:
+                remove_rows |= normalized_names.isin(blacklist)
+        if purge_rules and "text" in merged_year.columns:
+            matched_rows = merged_year["text"].fillna("").map(lambda text: bool(match_terms(text, purge_rules)))
+            # A match without an identifiable channel still removes the offending post.
+            remove_rows |= matched_rows & normalized_names.eq("")
+        merged_year = merged_year[~remove_rows]
+        purged_p = initial_p_count - len(merged_year)
+        if purged_p > 0:
+            print(f"[🔥] Permanently purged {purged_p:,} posts from {partition_filename}!")
 
         if year == "2026":
             all_2026_df = merged_year
@@ -429,8 +520,7 @@ def sync_partitioned_posts(blacklist):
         commit_message="Update dataset partitions manifest"
     )
 
-    if not all_2026_df.empty:
-        push_to_cloudflare_kv(all_2026_df)
+    push_to_cloudflare_kv(all_2026_df)
 
     for y in manifest_data:
         total_posts_all_years += manifest_data[y].get("total_rows", 0)
@@ -442,9 +532,10 @@ def main():
     print("🚀 بدء مزامنة ورفع وتوسيع استكشاف البيانات...")
     print("=" * 65)
 
-    blacklist = get_cloudflare_blacklist()
+    purge_rules = load_purge_rules()
+    blacklist = get_cloudflare_blacklist(required=True)
+    p_crawled, p_total = sync_partitioned_posts(blacklist, purge_rules)
     c_crawled, c_total, c_remaining = sync_channels(blacklist)
-    p_crawled, p_total = sync_partitioned_posts(blacklist)
 
     c_checked = c_total - c_remaining
     progress_pct = (c_checked / c_total * 100) if c_total > 0 else 0
