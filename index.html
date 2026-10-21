@@ -377,7 +377,7 @@
 
                 let mediaHtml = "";
                 const isVideo = p.media_type === "video" || (p.video && p.video.trim() !== "");
-                const username = String(p.username || "").replace(/[^a-zA-Z0-9_]/g, "");
+                const username = String(p.username || "").trim().replace(/^@/, "");
                 const postId = String(p.post_id || "").replace(/[^0-9]/g, "");
                 const imageUrl = (() => { try { const u = new URL(p.image); return u.protocol === "https:" ? escapeHtml(u.href) : ""; } catch { return ""; } })();
 
@@ -478,14 +478,31 @@
 
         async function purgeChannel(username) {
             if (!isAdmin) return;
-            const cards = document.querySelectorAll(`[data-username="${username.toLowerCase()}"]`);
-            cards.forEach(c => c.remove());
+            const normalizedUsername = String(username || "").trim().replace(/^@/, "");
+            if (!normalizedUsername) return;
+            const cards = Array.from(document.querySelectorAll(".card")).filter(
+                card => (card.dataset.username || "").toLowerCase() === normalizedUsername.toLowerCase()
+            );
+            const buttons = cards.flatMap(card => Array.from(card.querySelectorAll(".btn-trash")));
+            const statusEl = document.getElementById("statusBox");
+            buttons.forEach(button => { button.disabled = true; button.setAttribute("aria-label", `Removing @${normalizedUsername}…`); });
             try {
-                await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(username)}`, {
+                const res = await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(normalizedUsername)}`, {
                     method: "POST",
                     headers: { "X-Admin-Key": adminToken }
                 });
-            } catch (e) {}
+                const payload = await res.clone().json().catch(() => null);
+                if (!res.ok || payload?.success === false || payload?.ok === false) {
+                    throw new Error(payload?.error || payload?.message || `Server returned HTTP ${res.status}`);
+                }
+                cards.forEach(card => card.remove());
+                statusEl.textContent = `Purge request accepted for @${normalizedUsername}.`;
+                statusEl.style.display = "block";
+            } catch (error) {
+                buttons.forEach(button => { button.disabled = false; button.removeAttribute("aria-label"); });
+                statusEl.textContent = `Could not purge @${normalizedUsername}. ${error.message}. Posts were kept; please retry.`;
+                statusEl.style.display = "block";
+            }
         }
 
         window.addEventListener("scroll", () => {
