@@ -480,9 +480,9 @@ def extract_and_push_explorer_data(posts_df):
     def unique_candidates(items):
         selected = {}
         for candidate in items:
-            identity = (candidate.get("url") or candidate.get("title") or "").rstrip("/").casefold()
+            identity = str(candidate.get("domain") or candidate.get("title") or candidate.get("url") or "").rstrip("/").casefold()
             if not identity:
-                identity = str(candidate.get("title", "")).casefold()
+                identity = str(candidate.get("url", "")).casefold()
             previous = selected.get(identity)
             candidate_key = (
                 int(candidate.get("trend_score") or 0),
