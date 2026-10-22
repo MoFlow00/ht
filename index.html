@@ -114,9 +114,18 @@
         .tag-badge { background: var(--input-bg); border: 1px solid var(--border); padding: 4px 10px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; }
 
         .status-box { text-align: center; padding: 20px 10px; color: var(--text-sub); font-size: 0.9rem; }
-        .explorer-tools { display:flex; gap:8px; margin: 0 0 12px; }
-        .explorer-tools input { flex:1; min-width:0; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
-        .explorer-tools select { background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:8px; }
+        .explorer-tools { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 12px; }
+        .explorer-tools input { flex:2 1 190px; min-width:140px; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+        .explorer-tools select { flex:1 1 145px; min-width:130px; max-width:100%; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:8px; }
+        .trend-badge,.category-badge { display:inline-flex; align-items:center; width:fit-content; border-radius:6px; padding:2px 7px; font-size:.7rem; font-weight:700; border:1px solid var(--border); color:var(--text-sub); background:var(--badge-bg); }
+        .trend-trending { color:#15803d; border-color:#86efac; background:#f0fdf4; }
+        .trend-rising { color:#0369a1; border-color:#7dd3fc; background:#f0f9ff; }
+        .trend-new { color:#7c3aed; border-color:#c4b5fd; background:#f5f3ff; }
+        [data-theme="dark"] .trend-trending { color:#86efac; background:#052e16; border-color:#166534; }
+        [data-theme="dark"] .trend-rising { color:#7dd3fc; background:#082f49; border-color:#075985; }
+        [data-theme="dark"] .trend-new { color:#c4b5fd; background:#2e1065; border-color:#5b21b6; }
+        .discovery-meta { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+        .discovery-note { font-size:.76rem; color:var(--text-sub); line-height:1.45; }
         .nav-tab-btn,.theme-toggle-btn,.lang-btn,.search-box-wrap button,.hashtag-pill,.btn-toggle-more { min-height:40px; }
         .empty-state { padding:28px 16px; text-align:center; color:var(--text-sub); background:var(--bg-card); border:1px dashed var(--border); border-radius:12px; }
         .spinner { width: 22px; height: 22px; border: 3px solid var(--border); border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 8px; }
@@ -234,6 +243,9 @@
 
         let explorerData = null;
         let explorerCategory = "all";
+        let explorerTrend = "all";
+        let explorerFunction = "all";
+        let explorerSort = "relevance";
         async function loadExplorerData() {
             const explorerView = document.getElementById("explorerView");
             const statusEl = document.getElementById("statusBox");
@@ -256,56 +268,200 @@
         }
 
         function renderExplorer() {
-                const explorerView = document.getElementById("explorerView");
-                const oldSearch = document.getElementById("explorerSearch");
-                const searchFocused = oldSearch === document.activeElement;
-                const cursor = oldSearch?.selectionStart ?? 0;
-                const data = explorerData || {};
-                const query = (oldSearch?.value || "").trim().toLowerCase();
-                const safe = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
-                const safeLink = value => { try { const u=new URL(value); return ["https:","http:"].includes(u.protocol) ? safe(u.href) : "#"; } catch { return "#"; } };
-                let html = `<div class="explorer-tools"><input id="explorerSearch" type="search" placeholder="Search tools, repos, channels…" value="${safe(query)}" oninput="renderExplorer()"><select aria-label="Discovery category" onchange="explorerCategory=this.value;renderExplorer()"><option value="all" ${explorerCategory==="all"?"selected":""}>All discoveries</option><option value="ai" ${explorerCategory==="ai"?"selected":""}>AI tools</option><option value="web" ${explorerCategory==="web"?"selected":""}>Web gems</option><option value="repos" ${explorerCategory==="repos"?"selected":""}>GitHub repos</option><option value="packages" ${explorerCategory==="packages"?"selected":""}>Packages</option><option value="domains" ${explorerCategory==="domains"?"selected":""}>Top 100 domains</option></select></div>`;
-                const matches = item => !query || [item.title,item.preview,item.channel,item.package,item.url,item.domain].join(" ").toLowerCase().includes(query);
-                const linkCard = (item, icon, badge) => `<div class="item-card"><div class="item-header"><a rel="noopener noreferrer" href="${safeLink(item.url)}" target="_blank" class="item-name">${icon} ${safe(item.title)}</a><span class="mention-badge">${badge} ${safe(item.mentions)} mentions${item.unique_channels?` | ${safe(item.unique_channels)} ch`:''}</span></div><div class="item-preview">${safe((item.preview||"").replace(/https?:\/\/[^\s]+/g,""))}</div><div class="item-preview">Source: <a href="https://t.me/${safe(item.channel||'')}" target="_blank" rel="noopener noreferrer">@${safe(item.channel||"unknown")}</a></div></div>`;
-                if (explorerCategory === "all" || explorerCategory === "ai") html += `
-                    <div class="explorer-section">
-                        <div class="explorer-title">🤖 Trending AI Tools & Portals (${data.top_ai_tools ? data.top_ai_tools.length : 0})</div>
-                        ${(data.top_ai_tools || []).map(item => `
-                            ${matches(item) ? linkCard(item, "🤖", "🔥") : ""}
-                        `).join('')}
-                    </div>`
-                if (explorerCategory === "all" || explorerCategory === "web") html += `<div class="explorer-section">
-                        <div class="explorer-title">🔮 Rare Web Gems & Utilities (${data.top_web_gems ? data.top_web_gems.length : 0})</div>
-                        ${(data.top_web_gems || []).map(item => `
-                            ${matches(item) ? linkCard(item, "🌐", "✨") : ""}
-                        `).join('')}
-                    </div>`
-                if (explorerCategory === "all" || explorerCategory === "repos") html += `<div class="explorer-section">
-                        <div class="explorer-title">📦 Top GitHub Repositories (${data.top_repos ? data.top_repos.length : 0})</div>
-                        ${(data.top_repos || []).map(r => `
-                            ${matches(r) ? linkCard(r, "🐙", "⭐") : ""}
-                        `).join('')}
-                    </div>`
-                if (explorerCategory === "all" || explorerCategory === "packages") html += `<div class="explorer-section">
-                        <div class="explorer-title">⚡ Termux & Python Tools</div>
-                        <div class="pill-grid">
-                            ${(data.top_packages || []).filter(matches).map(p => `
-                                <div class="tag-badge">⚙️ ${safe(p.package)} <b style="color:var(--primary); font-size:0.7rem;">(${safe(p.mentions)})</b></div>
-                            `).join('')}
-                        </div>
-                    </div>
-                `;
-                if (explorerCategory === "all" || explorerCategory === "domains") html += `<div class="explorer-section">
-                        <div class="explorer-title">🔥 Top 100 Domains (${data.top_100_domains ? data.top_100_domains.length : 0})</div>
-                        ${(data.top_100_domains || []).filter(item => !query || [item.domain,item.channel,item.sample].join(" ").toLowerCase().includes(query)).map(item => `
-                            <div class="item-card"><div class="item-header"><a rel="noopener noreferrer" href="${safeLink(item.url)}" target="_blank" class="item-name">🔗 ${safe(item.domain)}</a><span class="mention-badge">🔥 ${safe(item.mentions)} mentions | ${safe(item.unique_channels)} ch</span></div><div class="item-preview">${safe((item.sample||"").replace(/https?:\/\/[^\s]+/g,""))}</div><div class="item-preview">First seen: ${safe((item.date||"").substring(0,16).replace("T"," "))} • <a href="https://t.me/${safe(item.channel||'')}" target="_blank" rel="noopener noreferrer">@${safe(item.channel||"unknown")}</a></div></div>
-                        `).join('')}
-                    </div>
-                `;
-                explorerView.innerHTML = html;
-                const newSearch = document.getElementById("explorerSearch");
-                if (searchFocused && newSearch) { newSearch.focus(); newSearch.setSelectionRange(cursor, cursor); }
-                if (query && !explorerView.querySelector(".item-card, .tag-badge")) explorerView.insertAdjacentHTML("beforeend", '<div class="empty-state">No discoveries match. Try another search or category.</div>');
+            const explorerView = document.getElementById("explorerView");
+            const oldSearch = document.getElementById("explorerSearch");
+            const searchFocused = oldSearch === document.activeElement;
+            const cursor = oldSearch?.selectionStart ?? 0;
+            const data = explorerData || {};
+            const query = (oldSearch?.value || "").trim().toLowerCase();
+            const safe = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+            const safeLink = value => {
+                try {
+                    const url = new URL(value);
+                    return ["https:", "http:"].includes(url.protocol) ? safe(url.href) : "#";
+                } catch (_) { return "#"; }
+            };
+            const option = (value, label, current) =>
+                '<option value="' + safe(value) + '"' + (current === value ? ' selected' : '') + '>' + safe(label) + '</option>';
+
+            let html = '<div class="explorer-tools">' +
+                '<input id="explorerSearch" type="search" placeholder="Search tools, repos, channels…" value="' + safe(query) + '" oninput="renderExplorer()">' +
+                '<select aria-label="Discovery group" onchange="explorerCategory=this.value;renderExplorer()">' +
+                    option("all", "All discoveries", explorerCategory) +
+                    option("rising", "Rising discoveries", explorerCategory) +
+                    option("new", "New discoveries", explorerCategory) +
+                    option("ai", "AI tools", explorerCategory) +
+                    option("web", "Web gems", explorerCategory) +
+                    option("repos", "GitHub repos", explorerCategory) +
+                    option("packages", "Packages", explorerCategory) +
+                    option("domains", "Top domains", explorerCategory) +
+                '</select>' +
+                '<select aria-label="Function category" onchange="explorerFunction=this.value;renderExplorer()">' +
+                    option("all", "All functions", explorerFunction) +
+                    option("ai_coding_agents", "AI Coding & Agents", explorerFunction) +
+                    option("local_ai", "Local AI & Models", explorerFunction) +
+                    option("creative_ai", "Image, Video & Audio AI", explorerFunction) +
+                    option("automation_api", "Automation, MCP & APIs", explorerFunction) +
+                    option("self_hosted_devtools", "Self-hosted & Dev Tools", explorerFunction) +
+                    option("ai_tools", "AI Tools", explorerFunction) +
+                    option("web_utilities", "Developer Utilities", explorerFunction) +
+                '</select>' +
+                '<select aria-label="Trend filter" onchange="explorerTrend=this.value;renderExplorer()">' +
+                    option("all", "Any trend status", explorerTrend) +
+                    option("trending", "Trending", explorerTrend) +
+                    option("rising", "Rising", explorerTrend) +
+                    option("new", "New", explorerTrend) +
+                    option("popular", "Popular", explorerTrend) +
+                    option("active", "Active", explorerTrend) +
+                    option("insufficient_data", "Insufficient data", explorerTrend) +
+                '</select>' +
+                '<select aria-label="Sort discoveries" onchange="explorerSort=this.value;renderExplorer()">' +
+                    option("relevance", "Default ranking", explorerSort) +
+                    option("trend", "Trend score", explorerSort) +
+                    option("growth", "Growth rate", explorerSort) +
+                    option("newest", "Latest source post", explorerSort) +
+                    option("mentions", "Most mentions", explorerSort) +
+                    option("channels", "Most channels", explorerSort) +
+                    option("views", "Source-post view gain", explorerSort) +
+                '</select></div>';
+
+            const trendLabel = item => item.trend_status_label || ({
+                trending: "Trending", rising: "Rising", new: "New", popular: "Popular",
+                active: "Active", insufficient_data: "Insufficient data"
+            }[item.trend_status] || "Insufficient data");
+            const toDisplay = item => Object.assign({}, item, {
+                title: item.title || item.domain || item.package || "",
+                preview: item.preview || item.sample || "",
+                url: item.url || (item.domain ? "https://" + item.domain : "")
+            });
+            const matches = item => {
+                const searchable = [
+                    item.title, item.preview, item.channel, item.package, item.url, item.domain,
+                    item.category, item.category_label, item.trend_status, item.trend_status_label
+                ].join(" ").toLowerCase();
+                if (query && !searchable.includes(query)) return false;
+                if (explorerTrend !== "all" && item.trend_status !== explorerTrend) return false;
+                if (explorerFunction !== "all" && item.category !== explorerFunction) return false;
+                return true;
+            };
+            const sortItems = items => {
+                const sorted = items.map(toDisplay).slice();
+                const num = value => Number.isFinite(Number(value)) ? Number(value) : -1;
+                if (explorerSort === "trend") {
+                    sorted.sort((a,b) => num(b.trend_score) - num(a.trend_score) || num(b.mentions_6h) - num(a.mentions_6h));
+                } else if (explorerSort === "growth") {
+                    sorted.sort((a,b) => num(b.growth_ratio) - num(a.growth_ratio) || num(b.trend_score) - num(a.trend_score));
+                } else if (explorerSort === "newest") {
+                    sorted.sort((a,b) => String(b.latest_post_at || b.date || "").localeCompare(String(a.latest_post_at || a.date || "")));
+                } else if (explorerSort === "mentions") {
+                    sorted.sort((a,b) => num(b.mentions) - num(a.mentions));
+                } else if (explorerSort === "channels") {
+                    sorted.sort((a,b) => num(b.unique_channels) - num(a.unique_channels));
+                } else if (explorerSort === "views") {
+                    sorted.sort((a,b) => num(b.source_post_views_per_hour) - num(a.source_post_views_per_hour));
+                }
+                return sorted;
+            };
+            const formatNumber = value => Number(value || 0).toLocaleString();
+            const formatAge = value => {
+                if (value === null || value === undefined || value === "") return "";
+                const minutes = Math.max(0, Number(value) || 0);
+                if (minutes < 60) return Math.round(minutes) + "m ago";
+                if (minutes < 1440) return Math.floor(minutes / 60) + "h ago";
+                return Math.floor(minutes / 1440) + "d ago";
+            };
+            const formatDate = value => String(value || "").substring(0,16).replace("T"," ");
+            const linkCard = (item, icon, typeBadge) => {
+                const trend = String(item.trend_status || "insufficient_data").toLowerCase();
+                const trendClass = ["trending","rising","new"].includes(trend) ? " trend-" + trend : "";
+                const uniqueChannels = Number(item.unique_channels || 0);
+                const mentions = Number(item.mentions || 0);
+                const category = item.category_label || "Developer Utilities";
+                const latest = item.latest_post_at || item.date || "";
+                const ageText = item.post_age_minutes !== null && item.post_age_minutes !== undefined
+                    ? "Latest source post: " + formatAge(item.post_age_minutes)
+                    : (latest ? "Latest source post: " + formatDate(latest) : "Latest source-post time unavailable");
+                const sampleCount = Number(item.source_post_view_samples || 0);
+                let viewText = "View velocity waiting for repeat snapshots";
+                if (sampleCount > 0 && item.source_post_views_delta !== null && item.source_post_views_delta !== undefined) {
+                    const delta = Number(item.source_post_views_delta || 0);
+                    const sign = delta > 0 ? "+" : "";
+                    viewText = "Linked Telegram posts: " + sign + formatNumber(delta) + " views across " +
+                        formatNumber(sampleCount) + " measured posts";
+                    if (item.source_post_views_per_hour !== null && item.source_post_views_per_hour !== undefined) {
+                        viewText += " · " + formatNumber(Math.round(Number(item.source_post_views_per_hour))) + " views/hour combined";
+                    }
+                }
+                const channel = String(item.channel || "").trim().replace(/^@/,"");
+                const source = channel
+                    ? '<div class="discovery-note">Source channel: <a href="https://t.me/' + safe(encodeURIComponent(channel)) + '" target="_blank" rel="noopener noreferrer">@' + safe(channel) + '</a></div>'
+                    : "";
+                return '<div class="item-card">' +
+                    '<div class="item-header"><a rel="noopener noreferrer" href="' + safeLink(item.url) + '" target="_blank" class="item-name">' +
+                        icon + ' ' + safe(item.title) + '</a><span class="mention-badge">' + safe(typeBadge) + ' ' +
+                        formatNumber(mentions) + ' posts · ' + formatNumber(uniqueChannels) + ' channels</span></div>' +
+                    '<div class="discovery-meta"><span class="trend-badge' + trendClass + '">' + safe(trendLabel(item)) + '</span>' +
+                        '<span class="category-badge">' + safe(category) + '</span>' +
+                        '<span class="mention-badge">Trend ' + formatNumber(item.trend_score || 0) + '/100</span></div>' +
+                    '<div class="item-preview">' + safe(String(item.preview || "").replace(/https?:\/\/[^\s]+/g,"").trim()) + '</div>' +
+                    '<div class="discovery-note">' + safe(ageText) + ' · 6h posts: ' + formatNumber(item.mentions_6h || 0) +
+                        ' · prior 24h: ' + formatNumber(item.mentions_previous_24h || 0) +
+                        (item.growth_ratio !== null && item.growth_ratio !== undefined ? ' · growth ' + safe(item.growth_ratio) + 'x' : '') + '</div>' +
+                    '<div class="discovery-note">' + safe(viewText) + '</div>' + source + '</div>';
+            };
+            const renderSection = (title, items, icon, badge) => {
+                const displayed = sortItems(items || []).filter(matches);
+                return '<div class="explorer-section"><div class="explorer-title">' + title +
+                    ' (' + displayed.length + ')</div>' +
+                    (displayed.length ? displayed.map(item => linkCard(item, icon, badge)).join("") :
+                        '<div class="discovery-note">No items match these filters.</div>') + '</div>';
+            };
+            const allTrendItems = (data.top_rising || []).map(toDisplay);
+            const allNewItems = (data.top_new || []).map(toDisplay);
+            const domains = (data.top_100_domains || []).map(toDisplay);
+            const packages = sortItems(data.top_packages || []).filter(matches);
+
+            if (explorerCategory === "all" || explorerCategory === "rising") {
+                html += renderSection("📈 Rising Discoveries", allTrendItems, "📈", "Rise");
+            }
+            if (explorerCategory === "all" || explorerCategory === "new") {
+                html += renderSection("🆕 New Discoveries", allNewItems, "🆕", "New");
+            }
+            if (explorerCategory === "all" || explorerCategory === "ai") {
+                html += renderSection("🤖 AI Tools & Portals", data.top_ai_tools || [], "🤖", "AI");
+            }
+            if (explorerCategory === "all" || explorerCategory === "web") {
+                html += renderSection("🔮 Web Gems & Utilities", data.top_web_gems || [], "🌐", "Web");
+            }
+            if (explorerCategory === "all" || explorerCategory === "repos") {
+                html += renderSection("🐙 GitHub Repositories", data.top_repos || [], "🐙", "Repo");
+            }
+            if (explorerCategory === "all" || explorerCategory === "packages") {
+                html += '<div class="explorer-section"><div class="explorer-title">⚙️ Packages (' + packages.length + ')</div><div class="pill-grid">' +
+                    packages.map(p => '<span class="tag-badge">⚙️ ' + safe(p.package) + ' <b style="color:var(--primary);font-size:.7rem">(' + formatNumber(p.mentions) + ')</b></span>').join("") +
+                    '</div></div>';
+            }
+            if (explorerCategory === "all" || explorerCategory === "domains") {
+                html += renderSection("🌐 Top Domains", domains, "🔗", "Domain");
+            }
+
+            const updated = data.updated_at ? formatDate(data.updated_at) + " UTC" : "unknown";
+            const snapshotCount = Number((data.view_tracking || {}).posts_with_valid_repeat_snapshots || 0);
+            html = '<div class="explorer-section"><div class="explorer-title">Discovery status</div>' +
+                '<div class="discovery-note">Data updated: ' + safe(updated) +
+                ' · Trend sample: ' + formatNumber(data.scan_window_posts || 0) + ' posts' +
+                ' · Posts with repeat view snapshots: ' + formatNumber(snapshotCount) +
+                '. Trend uses Telegram post publication timestamps; view gain uses measured Telegram post snapshots, not destination-site analytics.</div></div>' + html;
+
+            explorerView.innerHTML = html;
+            const newSearch = document.getElementById("explorerSearch");
+            if (searchFocused && newSearch) {
+                newSearch.focus();
+                try { newSearch.setSelectionRange(cursor, cursor); } catch (_) {}
+            }
+            if (query && !explorerView.querySelector(".item-card, .tag-badge")) {
+                explorerView.insertAdjacentHTML("beforeend", '<div class="empty-state">No discoveries match. Try another search or category.</div>');
+            }
         }
 
         window.setLang = function(lang, btnElement) {

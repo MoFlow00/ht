@@ -1,13 +1,18 @@
 import os
 import re
 import json
+import math
 import requests
 import pandas as pd
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from huggingface_hub import HfApi, hf_hub_download
 from purge_rules import build_matcher, channels_to_purge, match_terms, normalize_username
-from explorer_scoring import (AI_SCORE_THRESHOLD, build_model_patterns, load_model_terms, rank_items, rank_top_domains, score_ai_link)
+from explorer_scoring import (
+    AI_SCORE_THRESHOLD, build_model_patterns, load_model_terms, load_category_terms,
+    rank_items, rank_top_domains, score_ai_link, classify_category,
+    calculate_trend_metrics, parse_utc_datetime, is_valid_github_repo,
+)
 
 # ==================== إعدادات البيئة ====================
 HF_REPO_ID = os.getenv("HF_REPO_ID", "Moo408/dat-9f82c4")
@@ -168,181 +173,393 @@ def sync_channels(blacklist):
     return len(new_c_df), total, remaining
 
 def extract_and_push_explorer_data(posts_df):
-    """رادار أذكى: تصنيف دقيق لأدوات الذكاء الاصطناعي + روابط آخر 100 مستخرجة"""
+    """Build categorized discoveries, publication-time trends, and measured source-post view velocity."""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
-
     if not (cf_token and cf_account and cf_kv_id):
         return
 
-    print("[*] Running Smarter Multi-Asset Discovery...")
+    print("[*] Running categorized Discovery Hub analysis...")
+    now_utc = datetime.now(timezone.utc)
     sample_df = posts_df.copy()
     if "date" in sample_df.columns:
-        try:
-            sample_df = sample_df.sort_values(by="date", ascending=False)
-        except Exception:
-            pass
+        sample_df["_sort_date"] = pd.to_datetime(sample_df["date"], utc=True, errors="coerce")
+        sample_df = sample_df.sort_values("_sort_date", ascending=False, na_position="last")
+        sample_df = sample_df.drop(columns=["_sort_date"])
     sample_df = sample_df.head(SAMPLE_SCAN_LIMIT)
 
     model_terms = load_model_terms("ai_models_catalog.json")
     model_patterns = build_model_patterns(model_terms)
-    print(f"[*] Loaded {len(model_terms)} AI model/vendor terms for classification.")
+    category_terms = load_category_terms("ai_models_catalog.json")
+    print(f"[*] Loaded {len(model_terms)} model/vendor terms and {len(category_terms)} category groups.")
 
-    ai_sites_counter = Counter()
-    ai_sites_channels = {}
-    ai_sites_meta = {}
-    web_gems_counter = Counter()
-    web_gems_channels = {}
-    web_gems_meta = {}
+    ai_counter = Counter()
+    ai_channels = defaultdict(set)
+    ai_meta = {}
+    web_counter = Counter()
+    web_channels = defaultdict(set)
+    web_meta = {}
     github_counter = Counter()
-    github_channels = {}
+    github_channels = defaultdict(set)
     github_meta = {}
-    all_domains_counter = Counter()
-    all_domains_channels = {}
-    all_domains_meta = {}
+    domain_counter = Counter()
+    domain_channels = defaultdict(set)
+    domain_meta = {}
+    domain_occurrences = defaultdict(list)
+    repo_occurrences = defaultdict(list)
+    domain_urls = defaultdict(set)
+    domain_category_votes = defaultdict(Counter)
     tools_counter = Counter()
+    domain_view_delta = Counter()
+    domain_view_rate = Counter()
+    domain_view_samples = Counter()
+    repo_view_delta = Counter()
+    repo_view_rate = Counter()
+    repo_view_samples = Counter()
 
-    url_pattern = re.compile(r'https?://([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(/[^\s]*)?', re.IGNORECASE)
-    github_pattern = re.compile(r'github\.com/([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)', re.IGNORECASE)
-    pkg_pattern = re.compile(r'(?:pip install|pkg install|apt install)\s+([a-zA-Z0-9_-]+)', re.IGNORECASE)
+    url_pattern = re.compile(r"""https?://([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(/[^\s<>"']*)?""", re.IGNORECASE)
+    github_pattern = re.compile(r"(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", re.IGNORECASE)
+    pkg_pattern = re.compile(r"(?:pip install|pkg install|apt install)\s+([a-zA-Z0-9_.-]+)", re.IGNORECASE)
 
-    EXCLUDED_DOMAINS = {
+    excluded_domains = {
         "t.me", "telegram.org", "youtube.com", "youtu.be", "twitter.com", "x.com",
         "facebook.com", "instagram.com", "tiktok.com", "amzn.to", "amazon.com",
         "mediafire.com", "mega.nz", "drive.google.com", "play.google.com", "wa.me",
         "whatsapp.com", "tiny.cc", "bit.ly", "cutt.ly", "redd.it", "reddit.com",
         "aliexpress.com", "linkedin.com", "flipkart.com", "myntra.com", "temu.com",
-        "shein.com", "google.com", "bing.com", "yahoo.com"
+        "shein.com", "google.com", "bing.com", "yahoo.com",
     }
+    spam_pattern = re.compile("|".join(re.escape(s) for s in HARD_SPAM_BLOCKLIST), re.IGNORECASE)
+    chinese_pattern = re.compile(r"[\u4e00-\u9fff]")
+    utility_pattern = re.compile(
+        r"\b(api|tool|open source|developer|sdk|cli|framework|library|utility|"
+        r"formatter|converter|editor|generator|checker|validator|parser|viewer|"
+        r"boilerplate|documentation|reference|self-hosted|docker|termux)\b",
+        re.IGNORECASE,
+    )
 
-    spam_pattern = re.compile('|'.join([re.escape(s) for s in HARD_SPAM_BLOCKLIST]), re.IGNORECASE)
-    chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
+    def numeric(value):
+        try:
+            if pd.isna(value):
+                return None
+            result = float(value)
+            return result if math.isfinite(result) else None
+        except (TypeError, ValueError):
+            return None
 
-    seen_links = set()
+    def view_metrics(key, is_repo=False):
+        deltas = repo_view_delta if is_repo else domain_view_delta
+        rates = repo_view_rate if is_repo else domain_view_rate
+        samples = repo_view_samples if is_repo else domain_view_samples
+        return {
+            "source_post_views_delta": int(deltas.get(key, 0)) if samples.get(key, 0) else None,
+            "source_post_views_per_hour": round(rates.get(key, 0.0), 2) if samples.get(key, 0) else None,
+            "source_post_view_samples": int(samples.get(key, 0)),
+        }
 
+    def trend_for(key, occurrences, channels):
+        result = calculate_trend_metrics(occurrences.get(key, []), channels.get(key, set()), now_utc)
+        result["trend_status_label"] = {
+            "new": "New", "rising": "Rising", "trending": "Trending",
+            "popular": "Popular", "active": "Active",
+            "insufficient_data": "Insufficient data",
+        }.get(result["trend_status"], "Insufficient data")
+        return result
 
+    def category_for(domain, sample, votes=None):
+        if votes:
+            category, count = votes.most_common(1)[0]
+            total = sum(votes.values())
+            return {
+                "category": category,
+                "category_label": {
+                    "ai_coding_agents": "AI Coding & Agents",
+                    "local_ai": "Local AI & Models",
+                    "creative_ai": "Image, Video & Audio AI",
+                    "automation_api": "Automation, MCP & APIs",
+                    "self_hosted_devtools": "Self-hosted & Developer Tools",
+                    "ai_tools": "AI Tools",
+                    "web_utilities": "Developer Utilities",
+                }.get(category, "Developer Utilities"),
+                "category_confidence": min(95, round(45 + 50 * count / max(total, 1))),
+            }
+        return classify_category(domain, sample, category_terms, model_patterns)
+
+    rows_with_views = 0
     for _, row in sample_df.iterrows():
-        text = str(row.get("text", "") or "").strip()
-        username = str(row.get("username", "") or "").strip().lower()
+        post_text = str(row.get("text", "") or "").strip()
+        username = str(row.get("username", "") or "").strip().lower().lstrip("@")
         post_id = str(row.get("post_id", "") or "").strip()
         date_val = str(row.get("date", "") or "").strip()
-        if not text or text == "nan":
+        post_dt = parse_utc_datetime(date_val)
+        if not post_text or post_text.casefold() == "nan":
+            continue
+        text_lower = post_text.lower()
+        if spam_pattern.search(text_lower) or spam_pattern.search(username) or chinese_pattern.search(post_text):
             continue
 
-        text_lower = text.lower()
-        if spam_pattern.search(text_lower) or spam_pattern.search(username) or chinese_pattern.search(text):
-            continue
-
-        for domain, path in url_pattern.findall(text):
-            dom = domain.lower().replace("www.", "").strip()
-            if dom in EXCLUDED_DOMAINS or "github.com" in dom:
+        # Count each domain/repository at most once per source post, not once per URL
+        # and not once for the entire dataset. Repeated cross-channel posts still count.
+        post_domain_links = defaultdict(set)
+        post_domain_categories = {}
+        post_domain_scores = {}
+        for match in url_pattern.finditer(post_text):
+            dom = match.group(1).lower().removeprefix("www.").strip(".")
+            path = (match.group(2) or "").split("?")[0].split("#")[0].rstrip(".,;:!?)]}")
+            if any(dom == excluded or dom.endswith("." + excluded) for excluded in excluded_domains):
                 continue
-
-            full_link = f"https://{dom}{path}" if path else f"https://{dom}"
-            clean_link = full_link.split("?")[0].rstrip("/")
-            if clean_link in seen_links:
+            if dom == "github.com" or dom.endswith(".github.com"):
                 continue
-            seen_links.add(clean_link)
+            clean_link = f"https://{dom}{path}".rstrip("/")
+            post_domain_links[dom].add(clean_link)
+            post_domain_categories[dom] = classify_category(dom, text_lower, category_terms, model_patterns)
+            post_domain_scores[dom] = max(
+                post_domain_scores.get(dom, 0),
+                score_ai_link(dom, text_lower, model_patterns),
+            )
 
-            all_domains_counter[dom] += 1
-            all_domains_channels.setdefault(dom, set()).add(username)
-            if dom not in all_domains_meta:
-                all_domains_meta[dom] = {
-                    "url": clean_link,
-                    "domain": dom,
-                    "sample": text[:150],
-                    "channel": username,
-                    "date": date_val,
-                }
+        view_delta = numeric(row.get("views_delta"))
+        view_rate = numeric(row.get("views_velocity_per_hour"))
+        view_interval = numeric(row.get("views_interval_hours"))
+        snapshot_at = parse_utc_datetime(row.get("scraped_at"))
+        snapshot_age_hours = (
+            (now_utc - snapshot_at).total_seconds() / 3600
+            if snapshot_at else None
+        )
+        has_view_sample = (
+            view_delta is not None and view_rate is not None
+            and view_interval is not None and 0 < view_interval <= 24
+            and snapshot_age_hours is not None
+            and 0 <= snapshot_age_hours <= 24
+        )
+        if has_view_sample:
+            rows_with_views += 1
 
-            score = score_ai_link(dom, text_lower, model_patterns)
-            if score >= AI_SCORE_THRESHOLD:
-                ai_sites_counter[dom] += 1
-                ai_sites_channels.setdefault(dom, set()).add(username)
-                if dom not in ai_sites_meta:
-                    ai_sites_meta[dom] = {"url": clean_link, "domain": dom, "sample": text[:150], "channel": username, "score": score}
-            elif any(word in text_lower for word in ["api", "tool", "open source", "developer", "sdk", "cli", "framework", "library", "utility", "formatter", "converter", "editor", "generator", "checker", "validator", "parser", "viewer", "boilerplate", "documentation", "reference"]):
-                web_gems_counter[dom] += 1
-                web_gems_channels.setdefault(dom, set()).add(username)
-                if dom not in web_gems_meta:
-                    web_gems_meta[dom] = {"url": clean_link, "domain": dom, "sample": text[:150], "channel": username}
-
-        for repo in github_pattern.findall(text):
-            clean_repo = repo.strip().rstrip("/").rstrip(".")
-            if len(clean_repo.split("/")) == 2 and not clean_repo.endswith((".git", ".png", ".jpg")):
-                github_counter[clean_repo] += 1
-                github_channels.setdefault(clean_repo, set()).add(username)
-                if clean_repo not in github_meta:
-                    github_meta[clean_repo] = {"name": clean_repo, "url": f"https://github.com/{clean_repo}", "sample": text[:150], "channel": username}
-
-        for pkg in pkg_pattern.findall(text):
-            clean_pkg = pkg.strip().lower()
-            if 3 <= len(clean_pkg) <= 30:
-                tools_counter[clean_pkg] += 1
-
-    top_ai_tools = []
-    for score, dom, count, unique_ch in rank_items(ai_sites_counter, ai_sites_channels)[:35]:
-        meta = ai_sites_meta.get(dom, {})
-        top_ai_tools.append({
-            "title": dom,
-            "url": meta.get("url", f"https://{dom}"),
-            "mentions": count,
-            "unique_channels": unique_ch,
-            "score": meta.get("score", round(score, 2)),
-            "preview": meta.get("sample", ""),
-            "channel": meta.get("channel", "")
-        })
-
-    top_web_gems = []
-    for score, dom, count, unique_ch in rank_items(web_gems_counter, web_gems_channels)[:35]:
-        meta = web_gems_meta.get(dom, {})
-        top_web_gems.append({
-            "title": dom,
-            "url": meta.get("url", f"https://{dom}"),
-            "mentions": count,
-            "unique_channels": unique_ch,
-            "preview": meta.get("sample", ""),
-            "channel": meta.get("channel", "")
-        })
-
-    top_github = []
-    for score, repo, count, unique_ch in rank_items(github_counter, github_channels)[:35]:
-        meta = github_meta.get(repo, {})
-        top_github.append({
-            "title": repo,
-            "url": meta.get("url", f"https://github.com/{repo}"),
-            "mentions": count,
-            "unique_channels": unique_ch,
-            "preview": meta.get("sample", ""),
-            "channel": meta.get("channel", "")
-        })
-
-    top_100_domains = rank_top_domains(all_domains_counter, all_domains_channels)
-    for item in top_100_domains:
-        meta = all_domains_meta.get(item["domain"])
-        if meta:
-            item.update({
-                "url": meta["url"],
-                "sample": meta["sample"],
-                "channel": meta["channel"],
-                "date": meta["date"],
+        for dom, links in post_domain_links.items():
+            domain_counter[dom] += 1
+            if username:
+                domain_channels[dom].add(username)
+            domain_occurrences[dom].append((post_dt, username))
+            domain_urls[dom].update(links)
+            domain_category_votes[dom][post_domain_categories[dom]["category"]] += 1
+            domain_meta.setdefault(dom, {
+                "url": sorted(links)[0] if links else f"https://{dom}",
+                "domain": dom,
+                "sample": post_text[:180],
+                "channel": username,
+                "date": date_val,
             })
+            score = post_domain_scores[dom]
+            if score >= AI_SCORE_THRESHOLD:
+                ai_counter[dom] += 1
+                if username:
+                    ai_channels[dom].add(username)
+                ai_meta.setdefault(dom, {
+                    "url": sorted(links)[0] if links else f"https://{dom}",
+                    "domain": dom,
+                    "sample": post_text[:180],
+                    "channel": username,
+                    "score": score,
+                })
+            elif utility_pattern.search(text_lower):
+                web_counter[dom] += 1
+                if username:
+                    web_channels[dom].add(username)
+                web_meta.setdefault(dom, {
+                    "url": sorted(links)[0] if links else f"https://{dom}",
+                    "domain": dom,
+                    "sample": post_text[:180],
+                    "channel": username,
+                })
+            if has_view_sample:
+                domain_view_delta[dom] += int(view_delta)
+                domain_view_rate[dom] += view_rate
+                domain_view_samples[dom] += 1
+
+        seen_repos_in_post = set()
+        for repo in github_pattern.findall(post_text):
+            clean_repo = repo.strip().rstrip("/").rstrip(".")
+            if not is_valid_github_repo(clean_repo):
+                continue
+            normalized_repo = "/".join(part for part in clean_repo.split("/"))
+            if normalized_repo.casefold() in seen_repos_in_post:
+                continue
+            seen_repos_in_post.add(normalized_repo.casefold())
+            github_counter[normalized_repo] += 1
+            if username:
+                github_channels[normalized_repo].add(username)
+            repo_occurrences[normalized_repo].append((post_dt, username))
+            github_meta.setdefault(normalized_repo, {
+                "name": normalized_repo,
+                "url": f"https://github.com/{normalized_repo}",
+                "sample": post_text[:180],
+                "channel": username,
+            })
+            if has_view_sample:
+                repo_view_delta[normalized_repo] += int(view_delta)
+                repo_view_rate[normalized_repo] += view_rate
+                repo_view_samples[normalized_repo] += 1
+
+        seen_packages = set()
+        for package in pkg_pattern.findall(post_text):
+            clean_package = package.strip().lower().strip(".,;:!?)")
+            if 3 <= len(clean_package) <= 40:
+                seen_packages.add(clean_package)
+        tools_counter.update(seen_packages)
+
+    print(f"[*] Analyzed {len(sample_df):,} recent posts. {rows_with_views:,} had valid repeat-view measurements.")
+
+    def enrich_item(item, key, occurrence_map, channel_map, domain="", votes=None, is_repo=False):
+        context = item.get("sample", item.get("preview", ""))
+        item.update(trend_for(key, occurrence_map, channel_map))
+        item.update(category_for(domain or key, context, votes))
+        item.update(view_metrics(key, is_repo=is_repo))
+        item["unique_links"] = len(domain_urls.get(key, set())) if not is_repo else None
+        item["unique_channels"] = len(channel_map.get(key, set()))
+        return item
+
+    ranked_ai = rank_items(ai_counter, ai_channels)
+    top_ai_all = []
+    for rank_score, dom, count, unique_ch in ranked_ai:
+        meta = ai_meta.get(dom, {})
+        item = {
+            "title": dom, "url": meta.get("url", f"https://{dom}"),
+            "mentions": count, "unique_channels": unique_ch,
+            "score": meta.get("score", round(rank_score, 2)),
+            "preview": meta.get("sample", ""), "channel": meta.get("channel", ""),
+        }
+        top_ai_all.append(enrich_item(item, dom, domain_occurrences, domain_channels, dom, domain_category_votes[dom]))
+
+    ranked_web = rank_items(web_counter, web_channels)
+    top_web_all = []
+    for rank_score, dom, count, unique_ch in ranked_web:
+        meta = web_meta.get(dom, {})
+        item = {
+            "title": dom, "url": meta.get("url", f"https://{dom}"),
+            "mentions": count, "unique_channels": unique_ch,
+            "score": round(rank_score, 2), "preview": meta.get("sample", ""),
+            "channel": meta.get("channel", ""),
+        }
+        top_web_all.append(enrich_item(item, dom, domain_occurrences, domain_channels, dom, domain_category_votes[dom]))
+
+    ranked_github = rank_items(github_counter, github_channels)
+    top_github_all = []
+    for rank_score, repo, count, unique_ch in ranked_github:
+        meta = github_meta.get(repo, {})
+        item = {
+            "title": repo, "url": meta.get("url", f"https://github.com/{repo}"),
+            "mentions": count, "unique_channels": unique_ch,
+            "score": round(rank_score, 2), "preview": meta.get("sample", ""),
+            "channel": meta.get("channel", ""),
+        }
+        top_github_all.append(enrich_item(item, repo, repo_occurrences, github_channels, "github.com", None, True))
+
+    domain_discoveries = {}
+    for dom, mentions in domain_counter.items():
+        meta = domain_meta.get(dom, {})
+        item = {
+            "title": dom,
+            "domain": dom,
+            "url": meta.get("url", f"https://{dom}"),
+            "mentions": mentions,
+            "unique_channels": len(domain_channels.get(dom, set())),
+            "unique_links": len(domain_urls.get(dom, set())),
+            "sample": meta.get("sample", ""),
+            "preview": meta.get("sample", ""),
+            "channel": meta.get("channel", ""),
+            "date": meta.get("date", ""),
+            "score": round(mentions * 0.6 + len(domain_channels.get(dom, set())) * 0.4, 2),
+        }
+        item.update(trend_for(dom, domain_occurrences, domain_channels))
+        item.update(category_for(dom, item["sample"], domain_category_votes[dom]))
+        item.update(view_metrics(dom))
+        domain_discoveries[dom] = item
+
+    top_100_domains = [
+        domain_discoveries[ranked["domain"]]
+        for ranked in rank_top_domains(domain_counter, domain_channels)
+        if ranked["domain"] in domain_discoveries
+    ]
+
+    candidates = top_ai_all + top_web_all + top_github_all + list(domain_discoveries.values())
+
+    def unique_candidates(items):
+        selected = {}
+        for candidate in items:
+            identity = str(candidate.get("domain") or candidate.get("title") or candidate.get("url") or "").rstrip("/").casefold()
+            if not identity:
+                identity = str(candidate.get("url", "")).casefold()
+            previous = selected.get(identity)
+            candidate_key = (
+                int(candidate.get("trend_score") or 0),
+                int(candidate.get("unique_channels") or 0),
+                int(candidate.get("mentions") or 0),
+            )
+            previous_key = (
+                int(previous.get("trend_score") or 0),
+                int(previous.get("unique_channels") or 0),
+                int(previous.get("mentions") or 0),
+            ) if previous else (-1, -1, -1)
+            if previous is None or candidate_key > previous_key:
+                selected[identity] = candidate
+        return list(selected.values())
+
+    deduped_candidates = unique_candidates(candidates)
+    top_rising = sorted(
+        (
+            item.copy() for item in deduped_candidates
+            if item.get("trend_status") in {"trending", "rising"}
+        ),
+        key=lambda item: (
+            item.get("trend_score", 0),
+            item.get("growth_ratio") or 0,
+            item.get("unique_channels", 0),
+            item.get("mentions", 0),
+        ),
+        reverse=True,
+    )[:40]
+    top_new = sorted(
+        (item.copy() for item in deduped_candidates if item.get("trend_status") == "new"),
+        key=lambda item: (item.get("latest_post_at", ""), item.get("mentions", 0)),
+        reverse=True,
+    )[:40]
 
     explorer_payload = {
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "top_ai_tools": top_ai_tools,
-        "top_web_gems": top_web_gems,
-        "top_repos": top_github,
-        "top_packages": [{"package": p, "mentions": c} for p, c in tools_counter.most_common(40)],
-        "top_100_domains": top_100_domains
+        "updated_at": now_utc.isoformat(),
+        "scan_window_posts": int(len(sample_df)),
+        "trend_settings": {
+            "primary_window_hours": 6,
+            "baseline_window_hours": 24,
+            "minimum_trending_mentions": 5,
+            "minimum_trending_channels": 3,
+            "note": "Trend is based on Telegram post publication time. View velocity is reported separately and only after repeated snapshots."
+        },
+        "top_ai_tools": top_ai_all[:35],
+        "top_web_gems": top_web_all[:35],
+        "top_repos": top_github_all[:35],
+        "top_packages": [{"package": package, "mentions": count} for package, count in tools_counter.most_common(40)],
+        "top_100_domains": top_100_domains,
+        "top_rising": top_rising,
+        "top_new": top_new,
+        "view_tracking": {
+            "posts_with_valid_repeat_snapshots": rows_with_views,
+            "source": "Telegram source-post view counts, not destination website analytics",
+        },
     }
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/curated_explorer_data"
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
-    res = requests.put(url, headers=headers, json=explorer_payload)
-    if res.status_code == 200:
-        print(f"[✓] Explorer Smart-Pushed: {len(top_ai_tools)} AI Tools, {len(top_web_gems)} Web Gems, {len(top_github)} Repos, {len(top_100_domains)} domains discovered!")
+    res = requests.put(url, headers=headers, json=explorer_payload, timeout=30)
+    res.raise_for_status()
+    result = res.json()
+    if isinstance(result, dict) and result.get("success") is False:
+        raise RuntimeError(f"Cloudflare rejected Explorer update: {result.get('errors', result)}")
+    print(
+        f"[✓] Explorer Smart-Pushed: {len(top_ai_all[:35])} AI Tools, "
+        f"{len(top_web_all[:35])} Web Gems, {len(top_github_all[:35])} Repos, "
+        f"{len(top_rising)} rising and {len(top_new)} new discoveries."
+    )
 
 def push_to_cloudflare_kv(posts_df):
     """فلترة وضخ حتى 8,000 منشور نشط مع ترتيب قائم على الجودة والتفاعل"""
@@ -400,7 +617,11 @@ def push_to_cloudflare_kv(posts_df):
 
     print(f"[+] Successfully curated {len(clean_curated):,} clean tech posts (Cap: {MAX_FEED_LIMIT})!")
 
-    cols_to_keep = ["id", "username", "post_id", "text", "image", "video", "media_type", "views", "date"]
+    cols_to_keep = [
+        "id", "username", "post_id", "text", "image", "video", "media_type", "views", "date",
+        "scraped_at", "previous_views", "previous_scraped_at", "views_delta",
+        "views_velocity_per_hour", "views_interval_hours",
+    ]
     latest_subset = []
     for p in clean_curated:
         row_dict = {c: str(p.get(c, "") if pd.notna(p.get(c)) else "") for c in cols_to_keep}
@@ -442,6 +663,77 @@ def discover_purge_channels(manifest_data, new_posts_df, purge_rules, existing_m
         ]
         blocked.update(channels_to_purge(records, purge_rules))
     return blocked
+
+
+
+def attach_view_history(existing_df, new_df):
+    """Attach repeat-scrape view deltas to newly fetched posts without faking history."""
+    if new_df.empty:
+        return new_df
+    enriched = new_df.copy()
+    now_text = datetime.now(timezone.utc).isoformat()
+    if "scraped_at" not in enriched.columns:
+        enriched["scraped_at"] = now_text
+    else:
+        empty_stamp = enriched["scraped_at"].isna() | enriched["scraped_at"].astype(str).str.strip().eq("")
+        enriched.loc[empty_stamp, "scraped_at"] = now_text
+
+    existing_by_id = {}
+    if not existing_df.empty and "id" in existing_df.columns:
+        for _, old_row in existing_df.iterrows():
+            old_id = str(old_row.get("id", "") or "")
+            if old_id:
+                existing_by_id[old_id] = {
+                    "views": old_row.get("views"),
+                    "scraped_at": old_row.get("scraped_at"),
+                }
+
+    previous_views = []
+    previous_scraped_at = []
+    views_delta = []
+    velocity_per_hour = []
+    interval_hours_values = []
+    for _, row in enriched.iterrows():
+        old = existing_by_id.get(str(row.get("id", "") or ""))
+        old_views = None
+        old_stamp = ""
+        current_views = None
+        try:
+            if old and pd.notna(old.get("views")):
+                parsed_old_views = float(old["views"])
+                old_views = parsed_old_views if math.isfinite(parsed_old_views) else None
+            if pd.notna(row.get("views")):
+                parsed_current_views = float(row["views"])
+                current_views = parsed_current_views if math.isfinite(parsed_current_views) else None
+        except (TypeError, ValueError):
+            old_views, current_views = None, None
+
+        old_stamp_value = old.get("scraped_at") if old else None
+        parsed_old = parse_utc_datetime(old_stamp_value)
+        parsed_current = parse_utc_datetime(row.get("scraped_at"))
+        old_stamp = parsed_old.isoformat() if parsed_old else ""
+        delta_value = rate_value = interval_value = None
+        if old_views is not None and current_views is not None and parsed_old and parsed_current:
+            interval = (parsed_current - parsed_old).total_seconds() / 3600
+            delta = current_views - old_views
+            # Ignore very short, very stale, or negative-rounded measurements.
+            if 0.1 <= interval <= 24 and delta >= 0:
+                delta_value = int(delta)
+                rate_value = round(delta / interval, 2)
+                interval_value = round(interval, 2)
+
+        previous_views.append(int(old_views) if old_views is not None else None)
+        previous_scraped_at.append(old_stamp)
+        views_delta.append(delta_value)
+        velocity_per_hour.append(rate_value)
+        interval_hours_values.append(interval_value)
+
+    enriched["previous_views"] = previous_views
+    enriched["previous_scraped_at"] = previous_scraped_at
+    enriched["views_delta"] = views_delta
+    enriched["views_velocity_per_hour"] = velocity_per_hour
+    enriched["views_interval_hours"] = interval_hours_values
+    return enriched
 
 
 def sync_partitioned_posts(blacklist, purge_rules):
@@ -494,6 +786,7 @@ def sync_partitioned_posts(blacklist, purge_rules):
         chunk_new = pd.DataFrame()
         if not new_posts_df.empty and "year_partition" in new_posts_df.columns:
             chunk_new = new_posts_df[new_posts_df["year_partition"] == year].drop(columns=["year_partition"], errors="ignore")
+            chunk_new = attach_view_history(existing_year_df, chunk_new)
 
         merged_year = pd.concat([existing_year_df, chunk_new], ignore_index=True)
         if merged_year.empty:

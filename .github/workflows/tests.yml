@@ -1,0 +1,51 @@
+name: Validate Discovery Hub
+
+on:
+  push:
+    branches:
+      - main
+      - discovery-hub-v2
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install test dependencies
+        run: python -m pip install --upgrade pip && pip install pandas requests huggingface_hub
+
+      - name: Run Python regression tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Validate Discovery Hub JavaScript
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          html = Path("index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r"<script(?:\s[^>]*)?>(.*?)</script>", html, flags=re.DOTALL | re.IGNORECASE)
+          if not scripts:
+              raise SystemExit("No inline JavaScript found in index.html")
+          Path("/tmp/discovery-hub.js").write_text("\n\n".join(scripts), encoding="utf-8")
+          PY
+          node --check /tmp/discovery-hub.js
