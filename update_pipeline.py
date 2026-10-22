@@ -322,9 +322,16 @@ def extract_and_push_explorer_data(posts_df):
         view_delta = numeric(row.get("views_delta"))
         view_rate = numeric(row.get("views_velocity_per_hour"))
         view_interval = numeric(row.get("views_interval_hours"))
+        snapshot_at = parse_utc_datetime(row.get("scraped_at"))
+        snapshot_age_hours = (
+            (now_utc - snapshot_at).total_seconds() / 3600
+            if snapshot_at else None
+        )
         has_view_sample = (
             view_delta is not None and view_rate is not None
             and view_interval is not None and 0 < view_interval <= 24
+            and snapshot_age_hours is not None
+            and 0 <= snapshot_age_hours <= 24
         )
         if has_view_sample:
             rows_with_views += 1
