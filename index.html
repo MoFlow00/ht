@@ -371,6 +371,13 @@
                 return Math.floor(minutes / 1440) + "d ago";
             };
             const formatDate = value => String(value || "").substring(0,16).replace("T"," ");
+            const formatInterval = hours => {
+                const amount = Number(hours);
+                if (!Number.isFinite(amount) || amount <= 0) return "";
+                if (amount < 1) return Math.round(amount * 60) + "m";
+                if (amount < 24) return amount.toFixed(1) + "h";
+                return (amount / 24).toFixed(1) + "d";
+            };
             const linkCard = (item, icon, typeBadge) => {
                 const trend = String(item.trend_status || "insufficient_data").toLowerCase();
                 const trendClass = ["trending","rising","new"].includes(trend) ? " trend-" + trend : "";
@@ -389,8 +396,10 @@
                     viewText = "Linked Telegram posts: " + sign + formatNumber(delta) + " views across " +
                         formatNumber(sampleCount) + " measured posts";
                     if (item.source_post_views_per_hour !== null && item.source_post_views_per_hour !== undefined) {
-                        viewText += " · " + formatNumber(Math.round(Number(item.source_post_views_per_hour))) + " views/hour combined";
+                        viewText += " · summed average rate: " + formatNumber(Math.round(Number(item.source_post_views_per_hour))) + " views/hour";
                     }
+                    const averageGap = formatInterval(item.source_post_view_avg_interval_hours);
+                    if (averageGap) viewText += " · average snapshot gap: " + averageGap;
                 }
                 const channel = String(item.channel || "").trim().replace(/^@/,"");
                 const source = channel
@@ -451,7 +460,7 @@
                 '<div class="discovery-note">Data updated: ' + safe(updated) +
                 ' · Trend sample: ' + formatNumber(data.scan_window_posts || 0) + ' posts' +
                 ' · Posts with repeat view snapshots: ' + formatNumber(snapshotCount) +
-                '. Trend uses Telegram post publication timestamps; view gain uses measured Telegram post snapshots, not destination-site analytics.</div></div>' + html;
+                '. Trend uses Telegram post publication timestamps; view rates are averaged over actual snapshot gaps and do not determine trend labels.</div></div>' + html;
 
             explorerView.innerHTML = html;
             const newSearch = document.getElementById("explorerSearch");
