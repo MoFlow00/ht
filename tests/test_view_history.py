@@ -48,7 +48,7 @@ class ViewHistoryTests(unittest.TestCase):
         self.assertTrue(pd.isna(row["views_delta"]))
         self.assertTrue(pd.isna(row["views_velocity_per_hour"]))
 
-    def test_stale_snapshot_is_not_used_for_hourly_rate(self):
+    def test_long_snapshot_interval_preserves_average_rate(self):
         old = pd.DataFrame([{
             "id": "channel_13",
             "views": "100",
@@ -56,6 +56,22 @@ class ViewHistoryTests(unittest.TestCase):
         }])
         new = pd.DataFrame([{
             "id": "channel_13",
+            "views": "900",
+            "scraped_at": "2026-10-22T10:00:00+00:00",
+        }])
+        row = attach_view_history(old, new).iloc[0]
+        self.assertEqual(row["views_delta"], 800)
+        self.assertEqual(row["views_interval_hours"], 96.0)
+        self.assertAlmostEqual(row["views_velocity_per_hour"], 800 / 96, places=2)
+
+    def test_interval_longer_than_thirty_days_is_not_scored(self):
+        old = pd.DataFrame([{
+            "id": "channel_14",
+            "views": "100",
+            "scraped_at": "2026-09-01T10:00:00+00:00",
+        }])
+        new = pd.DataFrame([{
+            "id": "channel_14",
             "views": "900",
             "scraped_at": "2026-10-22T10:00:00+00:00",
         }])
