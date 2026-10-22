@@ -652,9 +652,11 @@ def attach_view_history(existing_df, new_df):
         current_views = None
         try:
             if old and pd.notna(old.get("views")):
-                old_views = float(old["views"])
+                parsed_old_views = float(old["views"])
+                old_views = parsed_old_views if math.isfinite(parsed_old_views) else None
             if pd.notna(row.get("views")):
-                current_views = float(row["views"])
+                parsed_current_views = float(row["views"])
+                current_views = parsed_current_views if math.isfinite(parsed_current_views) else None
         except (TypeError, ValueError):
             old_views, current_views = None, None
 
