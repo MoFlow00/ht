@@ -71,7 +71,7 @@ CATEGORY_DOMAIN_HINTS = {
     },
     "self_hosted_devtools": {
         "coolify.io", "portainer.io", "docker.com", "termux.dev", "pypi.org",
-        "npmjs.com", "sqlite.org", "github.com",
+        "npmjs.com", "sqlite.org",
     },
 }
 CATEGORY_KEYWORDS = {
