@@ -368,7 +368,7 @@ def calculate_trend_metrics(
         "growth_ratio": growth_ratio,
         "growth_percent": growth_percent,
         "post_age_minutes": age_minutes,
-        "first_post_at": first.isoformat() if first else "",
+        "earliest_sampled_post_at": first.isoformat() if first else "",
         "latest_post_at": latest.isoformat() if latest else "",
         "trend_data_sufficient": len(previous_24h) >= 3 and len(recent_24h) >= 3,
     }
