@@ -155,7 +155,8 @@ def extract_post_data(msg, username):
             "media_type": str(media_type),
             "views": str(views),
             "reactions": str(reactions_count),
-            "date": str(date_str)
+            "date": str(date_str),
+            "scraped_at": datetime.now(timezone.utc).isoformat()
         }, discovered
 
     except Exception:
@@ -210,33 +211,52 @@ async def main():
         )
         c_df = pd.read_parquet(c_path)
         
-        # 1. تصفية القنوات التي لم تفحص بعد
+        # New channels are crawled first. Checked channels are revisited once
+        # their snapshot is old enough to measure view changes without re-fetching
+        # the same recent channels on every 30-minute run.
+        tech_pattern = r'python|termux|github|mod|apk|android|script|linux|code|tool|hack|api|dev'
+        now_utc = pd.Timestamp.now(tz="UTC")
         if "last_checked" in c_df.columns:
-            uninspected = c_df[c_df["last_checked"].isna() | (c_df["last_checked"].astype(str).str.strip() == "")].copy()
+            checked_at = pd.to_datetime(c_df["last_checked"], utc=True, errors="coerce")
+            uninspected_mask = checked_at.isna()
+            uninspected = c_df.loc[uninspected_mask].copy()
+            checked = c_df.loc[~uninspected_mask].copy()
+            checked["_last_checked_ts"] = checked_at.loc[~uninspected_mask]
+            refresh_cutoff = now_utc - pd.Timedelta(hours=6)
+            stale_checked = checked.loc[checked["_last_checked_ts"] <= refresh_cutoff].copy()
+            stale_checked = stale_checked.sort_values("_last_checked_ts", ascending=True, na_position="first")
         else:
             uninspected = c_df.copy()
+            stale_checked = c_df.iloc[0:0].copy()
 
         remaining_count = len(uninspected)
-        print(f"[*] Channels waiting in queue: {remaining_count:,}")
+        refresh_count = len(stale_checked)
+        print(f"[*] New channels waiting in queue: {remaining_count:,}")
+        print(f"[*] Previously inspected channels due for refresh: {refresh_count:,}")
 
-        if remaining_count > 0:
-            # 2. بناء طابور الأولوية: القنوات التقنية أولاً
-            tech_pattern = r'python|termux|github|mod|apk|android|script|linux|code|tool|hack|api|dev'
-            
-            is_tech = uninspected["username"].str.contains(tech_pattern, case=False, na=False)
-            tech_channels = uninspected[is_tech]
-            other_channels = uninspected[~is_tech]
+        def prioritize_tech(frame):
+            if frame.empty:
+                return frame
+            frame = frame.copy()
+            frame["_is_tech"] = frame["username"].astype(str).str.contains(tech_pattern, case=False, na=False)
+            sort_columns = ["_is_tech"]
+            ascending = [False]
+            if "_last_checked_ts" in frame.columns:
+                sort_columns.append("_last_checked_ts")
+                ascending.append(True)
+            frame = frame.sort_values(sort_columns, ascending=ascending, na_position="first")
+            return frame.drop(columns=["_is_tech", "_last_checked_ts"], errors="ignore")
 
-            print(f"[🔥] Found {len(tech_channels):,} UNINSPECTED TECH CHANNELS in database!")
-            
-            # وضع القنوات التقنية في صدارة الطابور
-            priority_queue = pd.concat([tech_channels, other_channels], ignore_index=True)
-            target_usernames = priority_queue["username"].dropna().head(CHANNELS_TO_SCRAPE_PER_RUN).tolist()
-            
-            print(f"[+] Loaded top {len(target_usernames)} target channels (Prioritizing Tech) for this run!")
-        else:
-            print("[!] All channels have been inspected!")
-
+        # Uninspected channels have priority, followed by the oldest six-hour
+        # snapshots. Avoid silently stopping once the initial queue is exhausted.
+        priority_queue = pd.concat(
+            [prioritize_tech(uninspected), prioritize_tech(stale_checked)],
+            ignore_index=True,
+        )
+        if "username" in priority_queue.columns:
+            priority_queue = priority_queue.drop_duplicates(subset=["username"], keep="first")
+            target_usernames = priority_queue["username"].dropna().astype(str).head(CHANNELS_TO_SCRAPE_PER_RUN).tolist()
+        print(f"[+] Loaded {len(target_usernames)} target channels for this run.");
     except Exception as e:
         print(f"[-] Could not load channels queue: {e}")
 
