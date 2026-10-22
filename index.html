@@ -449,6 +449,7 @@
             const snapshotCount = Number((data.view_tracking || {}).posts_with_valid_repeat_snapshots || 0);
             html = '<div class="explorer-section"><div class="explorer-title">Discovery status</div>' +
                 '<div class="discovery-note">Data updated: ' + safe(updated) +
+                ' · Trend sample: ' + formatNumber(data.scan_window_posts || 0) + ' posts' +
                 ' · Posts with repeat view snapshots: ' + formatNumber(snapshotCount) +
                 '. Trend uses Telegram post publication timestamps; view gain uses measured Telegram post snapshots, not destination-site analytics.</div></div>' + html;
 
