@@ -214,9 +214,11 @@ def extract_and_push_explorer_data(posts_df):
     domain_view_delta = Counter()
     domain_view_rate = Counter()
     domain_view_samples = Counter()
+    domain_view_interval_hours = Counter()
     repo_view_delta = Counter()
     repo_view_rate = Counter()
     repo_view_samples = Counter()
+    repo_view_interval_hours = Counter()
 
     url_pattern = re.compile(r"""https?://([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})(/[^\s<>"']*)?""", re.IGNORECASE)
     github_pattern = re.compile(r"(?:https?://)?(?:www\.)?github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)", re.IGNORECASE)
@@ -252,10 +254,13 @@ def extract_and_push_explorer_data(posts_df):
         deltas = repo_view_delta if is_repo else domain_view_delta
         rates = repo_view_rate if is_repo else domain_view_rate
         samples = repo_view_samples if is_repo else domain_view_samples
+        intervals = repo_view_interval_hours if is_repo else domain_view_interval_hours
+        sample_count = int(samples.get(key, 0))
         return {
-            "source_post_views_delta": int(deltas.get(key, 0)) if samples.get(key, 0) else None,
-            "source_post_views_per_hour": round(rates.get(key, 0.0), 2) if samples.get(key, 0) else None,
-            "source_post_view_samples": int(samples.get(key, 0)),
+            "source_post_views_delta": int(deltas.get(key, 0)) if sample_count else None,
+            "source_post_views_per_hour": round(rates.get(key, 0.0), 2) if sample_count else None,
+            "source_post_view_samples": sample_count,
+            "source_post_view_avg_interval_hours": round(intervals.get(key, 0.0) / sample_count, 1) if sample_count else None,
         }
 
     def trend_for(key, occurrences, channels):
@@ -329,7 +334,7 @@ def extract_and_push_explorer_data(posts_df):
         )
         has_view_sample = (
             view_delta is not None and view_rate is not None
-            and view_interval is not None and 0 < view_interval <= 24
+            and view_interval is not None and 0 < view_interval <= 720
             and snapshot_age_hours is not None
             and 0 <= snapshot_age_hours <= 24
         )
@@ -376,6 +381,7 @@ def extract_and_push_explorer_data(posts_df):
                 domain_view_delta[dom] += int(view_delta)
                 domain_view_rate[dom] += view_rate
                 domain_view_samples[dom] += 1
+                domain_view_interval_hours[dom] += view_interval
 
         seen_repos_in_post = set()
         for repo in github_pattern.findall(post_text):
@@ -400,6 +406,7 @@ def extract_and_push_explorer_data(posts_df):
                 repo_view_delta[normalized_repo] += int(view_delta)
                 repo_view_rate[normalized_repo] += view_rate
                 repo_view_samples[normalized_repo] += 1
+                repo_view_interval_hours[normalized_repo] += view_interval
 
         seen_packages = set()
         for package in pkg_pattern.findall(post_text):
@@ -545,6 +552,8 @@ def extract_and_push_explorer_data(posts_df):
         "view_tracking": {
             "posts_with_valid_repeat_snapshots": rows_with_views,
             "source": "Telegram source-post view counts, not destination website analytics",
+            "max_snapshot_interval_hours": 720,
+            "rate_note": "Rates average over each post's actual snapshot interval; the UI shows the average interval.",
         },
     }
 
@@ -716,8 +725,9 @@ def attach_view_history(existing_df, new_df):
         if old_views is not None and current_views is not None and parsed_old and parsed_current:
             interval = (parsed_current - parsed_old).total_seconds() / 3600
             delta = current_views - old_views
-            # Ignore very short, very stale, or negative-rounded measurements.
-            if 0.1 <= interval <= 24 and delta >= 0:
+            # Keep longer intervals because large channel queues can take days to cycle.
+            # The UI exposes the sample gap, and these rates never determine trend status.
+            if 0.1 <= interval <= 720 and delta >= 0:
                 delta_value = int(delta)
                 rate_value = round(delta / interval, 2)
                 interval_value = round(interval, 2)
