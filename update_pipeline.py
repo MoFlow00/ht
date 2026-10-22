@@ -448,31 +448,72 @@ def extract_and_push_explorer_data(posts_df):
         }
         top_github_all.append(enrich_item(item, repo, repo_occurrences, github_channels, "github.com", None, True))
 
-    top_100_domains = rank_top_domains(domain_counter, domain_channels)
-    for item in top_100_domains:
-        dom = item["domain"]
+    domain_discoveries = {}
+    for dom, mentions in domain_counter.items():
         meta = domain_meta.get(dom, {})
-        item.update({
+        item = {
+            "title": dom,
+            "domain": dom,
             "url": meta.get("url", f"https://{dom}"),
+            "mentions": mentions,
+            "unique_channels": len(domain_channels.get(dom, set())),
+            "unique_links": len(domain_urls.get(dom, set())),
             "sample": meta.get("sample", ""),
+            "preview": meta.get("sample", ""),
             "channel": meta.get("channel", ""),
             "date": meta.get("date", ""),
-            "unique_links": len(domain_urls.get(dom, set())),
-        })
+            "score": round(mentions * 0.6 + len(domain_channels.get(dom, set())) * 0.4, 2),
+        }
         item.update(trend_for(dom, domain_occurrences, domain_channels))
         item.update(category_for(dom, item["sample"], domain_category_votes[dom]))
         item.update(view_metrics(dom))
+        domain_discoveries[dom] = item
 
-    # One cross-category list ensures small-but-accelerating discoveries are not
-    # hidden behind high lifetime mention totals in the category-specific top lists.
-    candidates = top_ai_all + top_web_all + top_github_all
+    top_100_domains = [
+        domain_discoveries[ranked["domain"]]
+        for ranked in rank_top_domains(domain_counter, domain_channels)
+        if ranked["domain"] in domain_discoveries
+    ]
+
+    candidates = top_ai_all + top_web_all + top_github_all + list(domain_discoveries.values())
+
+    def unique_candidates(items):
+        selected = {}
+        for candidate in items:
+            identity = (candidate.get("url") or candidate.get("title") or "").rstrip("/").casefold()
+            if not identity:
+                identity = str(candidate.get("title", "")).casefold()
+            previous = selected.get(identity)
+            candidate_key = (
+                int(candidate.get("trend_score") or 0),
+                int(candidate.get("unique_channels") or 0),
+                int(candidate.get("mentions") or 0),
+            )
+            previous_key = (
+                int(previous.get("trend_score") or 0),
+                int(previous.get("unique_channels") or 0),
+                int(previous.get("mentions") or 0),
+            ) if previous else (-1, -1, -1)
+            if previous is None or candidate_key > previous_key:
+                selected[identity] = candidate
+        return list(selected.values())
+
+    deduped_candidates = unique_candidates(candidates)
     top_rising = sorted(
-        (item.copy() for item in candidates if item.get("trend_status") in {"trending", "rising"}),
-        key=lambda item: (item.get("trend_score", 0), item.get("growth_ratio") or 0, item.get("unique_channels", 0)),
+        (
+            item.copy() for item in deduped_candidates
+            if item.get("trend_status") in {"trending", "rising"}
+        ),
+        key=lambda item: (
+            item.get("trend_score", 0),
+            item.get("growth_ratio") or 0,
+            item.get("unique_channels", 0),
+            item.get("mentions", 0),
+        ),
         reverse=True,
     )[:40]
     top_new = sorted(
-        (item.copy() for item in candidates if item.get("trend_status") == "new"),
+        (item.copy() for item in deduped_candidates if item.get("trend_status") == "new"),
         key=lambda item: (item.get("latest_post_at", ""), item.get("mentions", 0)),
         reverse=True,
     )[:40]
