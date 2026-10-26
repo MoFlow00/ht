@@ -82,29 +82,29 @@
         .layout-switch { display:flex; align-items:center; gap:4px; padding:3px; background:var(--theme-btn-bg); border:1px solid var(--border); border-radius:9px; width:max-content; }
         .layout-switch button { border:0; border-radius:6px; padding:6px 10px; background:transparent; color:var(--text-sub); font-size:.76rem; font-weight:700; cursor:pointer; }
         .layout-switch button.active { background:var(--bg-card); color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,.08); }
-        #feedView.view-grid { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:10px; }
-        #feedView.view-grid .card { min-width:0; }
-        #feedView.view-grid .card-header { padding:8px; gap:5px; }
-        #feedView.view-grid .channel-info { min-width:0; gap:6px; }
-        #feedView.view-grid .channel-name { display:block; max-width:100%; overflow-wrap:anywhere; font-size:.8rem; }
-        #feedView.view-grid .channel-avatar { width:29px; height:29px; flex:0 0 29px; }
-        #feedView.view-grid .post-time { font-size:.66rem; }
-        #feedView.view-grid .card-body { padding:9px; font-size:.8rem; line-height:1.45; }
-        #feedView.view-grid .card-footer { padding:8px; gap:6px; flex-wrap:wrap; font-size:.7rem; }
-        #feedView.view-grid .card-footer a { font-size:.7rem; }
-        #feedView.view-grid .media-container img { max-height:190px; object-fit:cover; }
-        #feedView.view-grid .media-container iframe { min-height:160px; }
-        #explorerView.view-grid .discovery-feed { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-items:start; }
-        #explorerView.view-grid .discovery-domain-heading { grid-column:1 / -1; }
-        #explorerView.view-grid .discovery-link-card { min-width:0; padding:8px; gap:5px; }
-        #explorerView.view-grid .discovery-link-url { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-        #explorerView.view-grid .discovery-link-snippet { -webkit-line-clamp:3; font-size:.75rem; }
-        #explorerView.view-grid .discovery-channel-list { gap:3px; }
+        #feedView.feed-grid-mode { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:10px; }
+        #feedView.feed-grid-mode .card { min-width:0; }
+        #feedView.feed-grid-mode .card-header { padding:8px; gap:5px; }
+        #feedView.feed-grid-mode .channel-info { min-width:0; gap:6px; }
+        #feedView.feed-grid-mode .channel-name { display:block; max-width:100%; overflow-wrap:anywhere; font-size:.8rem; }
+        #feedView.feed-grid-mode .channel-avatar { width:29px; height:29px; flex:0 0 29px; }
+        #feedView.feed-grid-mode .post-time { font-size:.66rem; }
+        #feedView.feed-grid-mode .card-body { padding:9px; font-size:.8rem; line-height:1.45; }
+        #feedView.feed-grid-mode .card-footer { padding:8px; gap:6px; flex-wrap:wrap; font-size:.7rem; }
+        #feedView.feed-grid-mode .card-footer a { font-size:.7rem; }
+        #feedView.feed-grid-mode .media-container img { max-height:190px; object-fit:cover; }
+        #feedView.feed-grid-mode .media-container iframe { min-height:160px; }
+        #explorerView.discovery-grid-mode .discovery-feed { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-items:start; }
+        #explorerView.discovery-grid-mode .discovery-domain-heading { grid-column:1 / -1; }
+        #explorerView.discovery-grid-mode .discovery-link-card { min-width:0; padding:8px; gap:5px; }
+        #explorerView.discovery-grid-mode .discovery-link-url { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        #explorerView.discovery-grid-mode .discovery-link-snippet { -webkit-line-clamp:3; font-size:.75rem; }
+        #explorerView.discovery-grid-mode .discovery-channel-list { gap:3px; }
         @media (min-width: 900px) {
-            #feedView.view-grid, #explorerView.view-grid .discovery-feed { grid-template-columns:repeat(3,minmax(0,1fr)); }
+            #feedView.feed-grid-mode, #explorerView.discovery-grid-mode .discovery-feed { grid-template-columns:repeat(3,minmax(0,1fr)); }
         }
         @media (max-width: 360px) {
-            #feedView.view-grid, #explorerView.view-grid .discovery-feed { grid-template-columns:1fr; }
+            #feedView.feed-grid-mode, #explorerView.discovery-grid-mode .discovery-feed { grid-template-columns:1fr; }
         }
         .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
         .card-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); }
@@ -279,11 +279,11 @@
             if (view === "feed") {
                 feedLayoutMode = normalizedMode;
                 localStorage.setItem("feed_layout_mode", normalizedMode);
-                document.getElementById("feedView").classList.toggle("view-grid", normalizedMode === "grid");
+                document.getElementById("feedView").classList.toggle("feed-grid-mode", normalizedMode === "grid");
             } else {
                 discoveryLayoutMode = normalizedMode;
                 localStorage.setItem("discovery_layout_mode", normalizedMode);
-                document.getElementById("explorerView").classList.toggle("view-grid", normalizedMode === "grid");
+                document.getElementById("explorerView").classList.toggle("discovery-grid-mode", normalizedMode === "grid");
             }
             document.querySelectorAll('[data-layout-view="' + view + '"]').forEach(button => {
                 button.classList.toggle("active", button.dataset.layoutMode === normalizedMode);
