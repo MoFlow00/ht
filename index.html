@@ -147,7 +147,7 @@
         .discovery-channel-chip { display:inline-flex; align-items:center; gap:4px; max-width:100%; border:1px solid var(--border); border-radius:7px; padding:2px 4px 2px 7px; color:var(--primary); font-size:.72rem; }
         .discovery-icon-action { display:inline-flex; align-items:center; justify-content:center; width:23px; height:23px; border:0; border-radius:5px; background:var(--theme-btn-bg); color:var(--primary); text-decoration:none; font-size:.9rem; font-weight:700; cursor:pointer; }
         .discovery-icon-action.danger { color:var(--danger); }
-        .discovery-load-more { width:100%; margin-top:10px; }
+        .discovery-pagination { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; flex-wrap:wrap; }\n        .discovery-page-label { color:var(--text-sub); font-size:.75rem; }
         .discovery-warning { color:var(--text-sub); font-size:.75rem; line-height:1.45; margin:5px 0 10px; }
         .discovery-admin-log { margin-top:12px; border-top:1px solid var(--border); padding-top:10px; }
         @media (prefers-reduced-motion: reduce) { .spinner { animation:none; } }
@@ -268,6 +268,7 @@
         // Only one feed page is requested when the user reaches the end of the current list.
         const DISCOVERY_BATCH_SIZE = 100;
         let discoveryPostsPage = 1;
+        let discoveryVisiblePage = 0;
         let discoveryHasMore = true;
         let discoveryLoading = false;
         let discoveryLoaded = false;
@@ -324,6 +325,7 @@
 
         function resetDiscoveryData() {
             discoveryPostsPage = 1;
+            discoveryVisiblePage = 0;
             discoveryHasMore = true;
             discoveryLoading = false;
             discoveryLoaded = false;
@@ -332,7 +334,7 @@
         }
 
         async function loadExplorerData(reset = false, forceNextBatch = false) {
-            if (reset) resetDiscoveryData();
+            if (reset) { resetDiscoveryData(); discoveryPostsPage = Math.floor(Math.random() * 40) + 1; }
             const explorerView = document.getElementById("explorerView");
             const statusEl = document.getElementById("statusBox");
             if (discoveryLoading) return;
@@ -432,6 +434,9 @@
                 return String(b.latestDate).localeCompare(String(a.latestDate)) || b.count - a.count;
             });
             sortItems(filtered);
+            const totalPages = Math.max(1, Math.ceil(filtered.length / DISCOVERY_BATCH_SIZE));
+            discoveryVisiblePage = Math.min(discoveryVisiblePage, totalPages - 1);
+            const pageItems = filtered.slice(discoveryVisiblePage * DISCOVERY_BATCH_SIZE, (discoveryVisiblePage + 1) * DISCOVERY_BATCH_SIZE);
 
             let html = '<div class="explorer-section">' +
                 '<div class="explorer-title">🔮 Discovery Hub · Link Radar</div>' +
@@ -445,16 +450,16 @@
                 '<option value="domain"' + (discoverySortMode === "domain" ? ' selected' : '') + '>Domain A–Z</option></select>' +
                 '<button type="button" onclick="refreshDiscovery()" title="Reload links" aria-label="Refresh">↻</button>' +
                 '</div>' +
-                '<div class="discovery-meta"><span class="mention-badge">' + filtered.length.toLocaleString() + ' links shown</span>' +
+                '<div class="discovery-meta"><span class="mention-badge">' + filtered.length.toLocaleString() + ' matching links</span>' +
                 '<span class="mention-badge">' + discoveryItems.reduce((sum,item) => sum + item.count, 0).toLocaleString() + ' appearances</span>' +
-                '<span class="mention-badge">' + Math.max(0, discoveryPostsPage - 1).toLocaleString() + ' feed pages</span></div>' +
+                '<span class="mention-badge">' + pageItems.length.toLocaleString() + ' on this page · ' + (discoveryVisiblePage + 1) + '/' + totalPages + ' pages</span></div>' +
                 '<div class="discovery-feed">';
 
             if (!filtered.length) {
                 html += '<div class="empty-state">' + (discoveryItems.length ? "No links match these filters." : "No links loaded yet. Load a batch to begin.") + '</div>';
             } else {
                 let activeDomain = "";
-                filtered.forEach(item => {
+                pageItems.forEach(item => {
                     const domain = domainOf(item);
                     if (discoveryGroupByDomain && discoveryDomainFilter === "all" && domain !== activeDomain) {
                         activeDomain = domain;
@@ -483,8 +488,10 @@
                 });
             }
 
-            html += '</div><button type="button" class="discovery-action discovery-load-more" id="discoveryLoadMore" onclick="loadExplorerData(false, true)">' +
-                (discoveryHasMore ? "Load next feed page ↓" : "End of available feed") + '</button>';
+            html += '</div><div class="discovery-pagination">' +
+                '<button type="button" class="discovery-action" ' + (discoveryVisiblePage === 0 ? 'disabled' : '') + ' onclick="changeDiscoveryPage(-1)">← Previous 100</button>' +
+                '<span class="discovery-page-label">Page ' + (discoveryVisiblePage + 1) + ' / ' + totalPages + '</span>' +
+                '<button type="button" class="discovery-action" ' + (discoveryVisiblePage + 1 >= totalPages && !discoveryHasMore ? 'disabled' : '') + ' onclick="changeDiscoveryPage(1)">' + (discoveryVisiblePage + 1 < totalPages ? 'Next 100 →' : 'Load more links →') + '</button></div>';
 
             if (isAdmin && discoveryAdminLog.length) {
                 html += '<div class="discovery-admin-log"><div class="explorer-title">Admin action log</div>' +
@@ -504,8 +511,26 @@
             updateDiscoveryLoadButton();
         }
 
+        window.changeDiscoveryPage = async function(direction) {
+            const totalPages = Math.max(1, Math.ceil(discoveryItems.filter(item => {
+                let domain = "unknown domain";
+                try { domain = new URL(item.url).hostname.toLowerCase().replace(/^www\\./, ""); } catch (_) {}
+                return (discoveryDomainFilter === "all" || domain === discoveryDomainFilter) &&
+                    [item.url, domain, item.title, item.snippet, ...item.channels.values()].join(" ").toLowerCase().includes(discoveryQuery);
+            }).length / DISCOVERY_BATCH_SIZE));
+            if (direction > 0 && discoveryVisiblePage + 1 >= totalPages && discoveryHasMore) {
+                const before = discoveryItems.length;
+                await loadExplorerData(false, true);
+                if (discoveryItems.length > before) discoveryVisiblePage++;
+            } else {
+                discoveryVisiblePage = Math.max(0, Math.min(totalPages - 1, discoveryVisiblePage + direction));
+            }
+            renderExplorer();
+        };
+
         window.refreshDiscovery = function() {
             discoveryQuery = "";
+            discoveryVisiblePage = 0;
             loadExplorerData(true);
         };
 
@@ -561,10 +586,12 @@
         document.addEventListener("change", event => {
             if (event.target?.id === "discoveryDomainFilter") {
                 discoveryDomainFilter = event.target.value || "all";
+                discoveryVisiblePage = 0;
                 renderExplorer();
             }
             if (event.target?.id === "discoverySort") {
                 discoverySortMode = event.target.value || "latest";
+                discoveryVisiblePage = 0;
                 renderExplorer();
             }
         });
