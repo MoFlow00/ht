@@ -129,6 +129,27 @@
         .nav-tab-btn,.theme-toggle-btn,.lang-btn,.search-box-wrap button,.hashtag-pill,.btn-toggle-more { min-height:40px; }
         .empty-state { padding:28px 16px; text-align:center; color:var(--text-sub); background:var(--bg-card); border:1px dashed var(--border); border-radius:12px; }
         .spinner { width: 22px; height: 22px; border: 3px solid var(--border); border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 8px; }
+        .discovery-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:10px; }
+        .discovery-toolbar input { flex:1 1 220px; min-width:0; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:10px 12px; }
+        .discovery-toolbar button,.discovery-action { border:1px solid var(--border); background:var(--theme-btn-bg); color:var(--text-main); border-radius:8px; padding:8px 10px; font-size:.78rem; font-weight:700; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:36px; }
+        .discovery-toolbar button:disabled,.discovery-action:disabled { opacity:.55; cursor:wait; }
+        .discovery-feed { display:flex; flex-direction:column; gap:9px; }
+        .discovery-link-card { border:1px solid var(--border); border-radius:10px; padding:11px; background:var(--bg-card); display:flex; flex-direction:column; gap:7px; }
+        .discovery-link-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+        .discovery-link-title { color:var(--primary); font-weight:700; font-size:.88rem; line-height:1.4; overflow-wrap:anywhere; text-decoration:none; }
+        .discovery-link-url { color:var(--text-sub); font-size:.74rem; overflow-wrap:anywhere; }
+        .discovery-link-snippet { color:var(--text-main); font-size:.82rem; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; }
+        .discovery-link-meta { display:flex; flex-wrap:wrap; gap:6px; align-items:center; color:var(--text-sub); font-size:.73rem; }
+        .discovery-link-actions { display:flex; flex-wrap:wrap; gap:6px; }
+        .discovery-action.primary { background:var(--primary); color:#fff; border-color:var(--primary); }
+        .discovery-action.danger { color:var(--danger); border-color:var(--danger); background:transparent; }
+        .discovery-channel-list { display:flex; flex-wrap:wrap; gap:5px; }
+        .discovery-channel-list a { font-size:.74rem; color:var(--primary); text-decoration:none; border:1px solid var(--border); border-radius:6px; padding:3px 7px; }
+        .discovery-load-more { width:100%; margin-top:10px; }
+        .discovery-warning { color:var(--text-sub); font-size:.75rem; line-height:1.45; margin:5px 0 10px; }
+        .discovery-admin-log { margin-top:12px; border-top:1px solid var(--border); padding-top:10px; }
+        @media (prefers-reduced-motion: reduce) { .spinner { animation:none; } }
+
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
@@ -241,237 +262,275 @@
             }
         };
 
-        let explorerData = null;
-        let explorerCategory = "all";
-        let explorerTrend = "all";
-        let explorerFunction = "all";
-        let explorerSort = "relevance";
-        async function loadExplorerData() {
+        // Discovery Hub reads the existing paginated feed API, so no new response schema is assumed.
+        // Only one feed page is requested when the user reaches the end of the current list.
+        const DISCOVERY_BATCH_SIZE = 30;
+        let discoveryPostsPage = 1;
+        let discoveryHasMore = true;
+        let discoveryLoading = false;
+        let discoveryLoaded = false;
+        let discoveryItems = [];
+        let discoverySeenUrls = new Map();
+        let discoveryQuery = "";
+        let discoveryAdminLog = [];
+
+        function normalizeDiscoveryUrl(rawUrl) {
+            try {
+                const parsed = new URL(String(rawUrl || "").replace(/[),.;!?]+$/, ""));
+                if (!["http:", "https:"].includes(parsed.protocol)) return "";
+                parsed.hash = "";
+                parsed.hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
+                if ((parsed.protocol === "https:" && parsed.port === "443") ||
+                    (parsed.protocol === "http:" && parsed.port === "80")) parsed.port = "";
+                // Tracking parameters do not create separate discoveries.
+                ["utm_source","utm_medium","utm_campaign","utm_term","utm_content","fbclid","gclid"].forEach(k => parsed.searchParams.delete(k));
+                return parsed.href.replace(/\/$/, "") || parsed.href;
+            } catch (_) {
+                return "";
+            }
+        }
+
+        function extractDiscoveryUrls(text) {
+            const matches = String(text || "").match(/(?:https?:\/\/|www\.)[^\s<>"'\]]+/gi) || [];
+            return [...new Set(matches.map(value => normalizeDiscoveryUrl(value.startsWith("www.") ? "https://" + value : value)).filter(Boolean))];
+        }
+
+        function discoveryChannelName(post) {
+            return String(post?.username || post?.channel || "").trim().replace(/^@/, "");
+        }
+
+        function discoveryTelegramChannel(username) {
+            const name = String(username || "").trim().replace(/^@/, "");
+            return /^[a-zA-Z0-9_]{5,}$/.test(name) ? "https://t.me/" + encodeURIComponent(name) : "";
+        }
+
+        function loadDiscoveryAdminLog() {
+            try {
+                const saved = JSON.parse(localStorage.getItem("discovery_admin_log") || "[]");
+                discoveryAdminLog = Array.isArray(saved) ? saved : [];
+            } catch (_) {
+                discoveryAdminLog = [];
+            }
+        }
+
+        function saveDiscoveryAdminLog(entry) {
+            loadDiscoveryAdminLog();
+            discoveryAdminLog.unshift(entry);
+            discoveryAdminLog = discoveryAdminLog.slice(0, 50);
+            localStorage.setItem("discovery_admin_log", JSON.stringify(discoveryAdminLog));
+        }
+
+        function resetDiscoveryData() {
+            discoveryPostsPage = 1;
+            discoveryHasMore = true;
+            discoveryLoading = false;
+            discoveryLoaded = false;
+            discoveryItems = [];
+            discoverySeenUrls = new Map();
+        }
+
+        async function loadExplorerData(reset = false) {
+            if (reset) resetDiscoveryData();
             const explorerView = document.getElementById("explorerView");
             const statusEl = document.getElementById("statusBox");
-            if (explorerData) { renderExplorer(); return; }
-            explorerView.innerHTML = "";
-            statusEl.style.display = "block";
-            statusEl.innerHTML = '<div class="spinner"></div>Loading discovery data…';
+            if (discoveryLoading) return;
 
+            discoveryLoading = true;
+            statusEl.style.display = "block";
+            statusEl.innerHTML = '<div class="spinner"></div>Loading link discoveries…';
             try {
-                const res = await fetch(`${API_BASE}/api/explorer`);
+                const url = `${API_BASE}/api/feed?page=${discoveryPostsPage}&q=&lang=`;
+                const res = await fetch(url);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                explorerData = await res.json();
+                const data = await res.json();
+                const posts = Array.isArray(data.posts) ? data.posts : [];
+                discoveryHasMore = Boolean(data.has_more);
+
+                posts.forEach(post => {
+                    const text = String(post.text || "");
+                    const username = discoveryChannelName(post);
+                    const urls = extractDiscoveryUrls(text);
+                    urls.forEach(link => {
+                        const key = normalizeDiscoveryUrl(link);
+                        if (!key) return;
+                        let item = discoverySeenUrls.get(key);
+                        if (!item) {
+                            item = {
+                                key,
+                                url: key,
+                                title: (() => { try { return new URL(key).hostname.replace(/^www\./, ""); } catch (_) { return key; } })(),
+                                snippet: text.replace(/(?:https?:\/\/|www\.)[^\s<>"'\]]+/gi, "").replace(/\s+/g, " ").trim().slice(0, 280),
+                                count: 0,
+                                channels: new Map(),
+                                latestDate: "",
+                                samplePostId: String(post.post_id || ""),
+                            };
+                            discoverySeenUrls.set(key, item);
+                        }
+                        item.count += 1;
+                        if (username) item.channels.set(username.toLowerCase(), username);
+                        const date = String(post.date || "");
+                        if (date && (!item.latestDate || date > item.latestDate)) item.latestDate = date;
+                        if (!item.snippet && text) item.snippet = text.slice(0, 280);
+                    });
+                });
+
+                discoveryPostsPage += 1;
+                discoveryLoaded = true;
+                discoveryItems = Array.from(discoverySeenUrls.values()).sort((a,b) => String(b.latestDate).localeCompare(String(a.latestDate)));
                 statusEl.style.display = "none";
                 renderExplorer();
-                return;
-
-            } catch (err) {
-                statusEl.innerHTML = `Could not load discovery data. <button onclick="explorerData=null;loadExplorerData()">Try again</button>`;
+            } catch (error) {
+                statusEl.style.display = "block";
+                statusEl.textContent = "Could not load discovery links. " + String(error.message || error);
+                explorerView.querySelectorAll(".discovery-load-more").forEach(button => { button.disabled = false; });
+            } finally {
+                discoveryLoading = false;
+                updateDiscoveryLoadButton();
             }
+        }
+
+        function updateDiscoveryLoadButton() {
+            const button = document.getElementById("discoveryLoadMore");
+            if (!button) return;
+            button.disabled = discoveryLoading || !discoveryHasMore;
+            button.textContent = discoveryLoading ? "Loading…" : discoveryHasMore ? "Load 30 more links" : "End of available feed";
         }
 
         function renderExplorer() {
             const explorerView = document.getElementById("explorerView");
-            const oldSearch = document.getElementById("explorerSearch");
-            const searchFocused = oldSearch === document.activeElement;
+            const oldSearch = document.getElementById("discoverySearch");
+            const hadFocus = oldSearch === document.activeElement;
             const cursor = oldSearch?.selectionStart ?? 0;
-            const data = explorerData || {};
-            const query = (oldSearch?.value || "").trim().toLowerCase();
+            const query = (oldSearch?.value || discoveryQuery).trim().toLowerCase();
+            discoveryQuery = query;
             const safe = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
-            const safeLink = value => {
-                try {
-                    const url = new URL(value);
-                    return ["https:", "http:"].includes(url.protocol) ? safe(url.href) : "#";
-                } catch (_) { return "#"; }
-            };
-            const option = (value, label, current) =>
-                '<option value="' + safe(value) + '"' + (current === value ? ' selected' : '') + '>' + safe(label) + '</option>';
+            const formatDate = value => value ? safe(String(value).replace("T"," ").slice(0,16)) : "Date unavailable";
+            const filtered = discoveryItems.filter(item => [
+                item.url, item.title, item.snippet, ...item.channels.values()
+            ].join(" ").toLowerCase().includes(query));
 
-            let html = '<div class="explorer-tools">' +
-                '<input id="explorerSearch" type="search" placeholder="Search tools, repos, channels…" value="' + safe(query) + '" oninput="renderExplorer()">' +
-                '<select aria-label="Discovery group" onchange="explorerCategory=this.value;renderExplorer()">' +
-                    option("all", "All discoveries", explorerCategory) +
-                    option("rising", "Rising discoveries", explorerCategory) +
-                    option("new", "New discoveries", explorerCategory) +
-                    option("ai", "AI tools", explorerCategory) +
-                    option("web", "Web gems", explorerCategory) +
-                    option("repos", "GitHub repos", explorerCategory) +
-                    option("packages", "Packages", explorerCategory) +
-                    option("domains", "Top domains", explorerCategory) +
-                '</select>' +
-                '<select aria-label="Function category" onchange="explorerFunction=this.value;renderExplorer()">' +
-                    option("all", "All functions", explorerFunction) +
-                    option("ai_coding_agents", "AI Coding & Agents", explorerFunction) +
-                    option("local_ai", "Local AI & Models", explorerFunction) +
-                    option("creative_ai", "Image, Video & Audio AI", explorerFunction) +
-                    option("automation_api", "Automation, MCP & APIs", explorerFunction) +
-                    option("self_hosted_devtools", "Self-hosted & Dev Tools", explorerFunction) +
-                    option("ai_tools", "AI Tools", explorerFunction) +
-                    option("web_utilities", "Developer Utilities", explorerFunction) +
-                '</select>' +
-                '<select aria-label="Trend filter" onchange="explorerTrend=this.value;renderExplorer()">' +
-                    option("all", "Any trend status", explorerTrend) +
-                    option("trending", "Trending", explorerTrend) +
-                    option("rising", "Rising", explorerTrend) +
-                    option("new", "New", explorerTrend) +
-                    option("popular", "Popular", explorerTrend) +
-                    option("active", "Active", explorerTrend) +
-                    option("insufficient_data", "Insufficient data", explorerTrend) +
-                '</select>' +
-                '<select aria-label="Sort discoveries" onchange="explorerSort=this.value;renderExplorer()">' +
-                    option("relevance", "Default ranking", explorerSort) +
-                    option("trend", "Trend score", explorerSort) +
-                    option("growth", "Growth rate", explorerSort) +
-                    option("newest", "Latest source post", explorerSort) +
-                    option("mentions", "Most mentions", explorerSort) +
-                    option("channels", "Most channels", explorerSort) +
-                    option("views", "Source-post view gain", explorerSort) +
-                '</select></div>';
+            let html = '<div class="explorer-section">' +
+                '<div class="explorer-title">🔮 Discovery Hub · Link Radar</div>' +
+                '<div class="discovery-warning">Links are extracted from the existing paginated feed. Matching links are grouped together and source channels are listed. More posts are fetched only when you request the next batch or reach the end.</div>' +
+                '<div class="discovery-toolbar">' +
+                '<input id="discoverySearch" type="search" placeholder="Search links, domains, channels…" value="' + safe(query) + '">' +
+                '<button type="button" onclick="refreshDiscovery()">↻ Refresh</button>' +
+                '</div>' +
+                '<div class="discovery-meta"><span class="mention-badge">' + filtered.length.toLocaleString() + ' unique links</span>' +
+                '<span class="mention-badge">' + discoveryItems.reduce((sum,item) => sum + item.count, 0).toLocaleString() + ' link appearances</span>' +
+                '<span class="mention-badge">' + Math.max(0, discoveryPostsPage - 1).toLocaleString() + ' feed pages loaded</span></div>' +
+                '<div class="discovery-warning">Channel removal requires admin access and confirmation. The current API exposes purge, but no restore endpoint was found. The local log records the action and is not a database backup.</div>' +
+                '<div class="discovery-feed">';
 
-            const trendLabel = item => item.trend_status_label || ({
-                trending: "Trending", rising: "Rising", new: "New", popular: "Popular",
-                active: "Active", insufficient_data: "Insufficient data"
-            }[item.trend_status] || "Insufficient data");
-            const toDisplay = item => Object.assign({}, item, {
-                title: item.title || item.domain || item.package || "",
-                preview: item.preview || item.sample || "",
-                url: item.url || (item.domain ? "https://" + item.domain : "")
-            });
-            const matches = item => {
-                const searchable = [
-                    item.title, item.preview, item.channel, item.package, item.url, item.domain,
-                    item.category, item.category_label, item.trend_status, item.trend_status_label
-                ].join(" ").toLowerCase();
-                if (query && !searchable.includes(query)) return false;
-                if (explorerTrend !== "all" && item.trend_status !== explorerTrend) return false;
-                if (explorerFunction !== "all" && item.category !== explorerFunction) return false;
-                return true;
-            };
-            const sortItems = items => {
-                const sorted = items.map(toDisplay).slice();
-                const num = value => Number.isFinite(Number(value)) ? Number(value) : -1;
-                if (explorerSort === "trend") {
-                    sorted.sort((a,b) => num(b.trend_score) - num(a.trend_score) || num(b.mentions_6h) - num(a.mentions_6h));
-                } else if (explorerSort === "growth") {
-                    sorted.sort((a,b) => num(b.growth_ratio) - num(a.growth_ratio) || num(b.trend_score) - num(a.trend_score));
-                } else if (explorerSort === "newest") {
-                    sorted.sort((a,b) => String(b.latest_post_at || b.date || "").localeCompare(String(a.latest_post_at || a.date || "")));
-                } else if (explorerSort === "mentions") {
-                    sorted.sort((a,b) => num(b.mentions) - num(a.mentions));
-                } else if (explorerSort === "channels") {
-                    sorted.sort((a,b) => num(b.unique_channels) - num(a.unique_channels));
-                } else if (explorerSort === "views") {
-                    sorted.sort((a,b) => num(b.source_post_views_per_hour) - num(a.source_post_views_per_hour));
-                }
-                return sorted;
-            };
-            const formatNumber = value => Number(value || 0).toLocaleString();
-            const formatAge = value => {
-                if (value === null || value === undefined || value === "") return "";
-                const minutes = Math.max(0, Number(value) || 0);
-                if (minutes < 60) return Math.round(minutes) + "m ago";
-                if (minutes < 1440) return Math.floor(minutes / 60) + "h ago";
-                return Math.floor(minutes / 1440) + "d ago";
-            };
-            const formatDate = value => String(value || "").substring(0,16).replace("T"," ");
-            const formatInterval = hours => {
-                const amount = Number(hours);
-                if (!Number.isFinite(amount) || amount <= 0) return "";
-                if (amount < 1) return Math.round(amount * 60) + "m";
-                if (amount < 24) return amount.toFixed(1) + "h";
-                return (amount / 24).toFixed(1) + "d";
-            };
-            const linkCard = (item, icon, typeBadge) => {
-                const trend = String(item.trend_status || "insufficient_data").toLowerCase();
-                const trendClass = ["trending","rising","new"].includes(trend) ? " trend-" + trend : "";
-                const uniqueChannels = Number(item.unique_channels || 0);
-                const mentions = Number(item.mentions || 0);
-                const category = item.category_label || "Developer Utilities";
-                const latest = item.latest_post_at || item.date || "";
-                const ageText = item.post_age_minutes !== null && item.post_age_minutes !== undefined
-                    ? "Latest source post: " + formatAge(item.post_age_minutes)
-                    : (latest ? "Latest source post: " + formatDate(latest) : "Latest source-post time unavailable");
-                const sampleCount = Number(item.source_post_view_samples || 0);
-                let viewText = "View velocity waiting for repeat snapshots";
-                if (sampleCount > 0 && item.source_post_views_delta !== null && item.source_post_views_delta !== undefined) {
-                    const delta = Number(item.source_post_views_delta || 0);
-                    const sign = delta > 0 ? "+" : "";
-                    viewText = "Linked Telegram posts: " + sign + formatNumber(delta) + " views across " +
-                        formatNumber(sampleCount) + " measured posts";
-                    if (item.source_post_views_per_hour !== null && item.source_post_views_per_hour !== undefined) {
-                        viewText += " · summed average rate: " + formatNumber(Math.round(Number(item.source_post_views_per_hour))) + " views/hour";
-                    }
-                    const averageGap = formatInterval(item.source_post_view_avg_interval_hours);
-                    if (averageGap) viewText += " · average snapshot gap: " + averageGap;
-                }
-                const channel = String(item.channel || "").trim().replace(/^@/,"");
-                const source = channel
-                    ? '<div class="discovery-note">Source channel: <a href="https://t.me/' + safe(encodeURIComponent(channel)) + '" target="_blank" rel="noopener noreferrer">@' + safe(channel) + '</a></div>'
-                    : "";
-                return '<div class="item-card">' +
-                    '<div class="item-header"><a rel="noopener noreferrer" href="' + safeLink(item.url) + '" target="_blank" class="item-name">' +
-                        icon + ' ' + safe(item.title) + '</a><span class="mention-badge">' + safe(typeBadge) + ' ' +
-                        formatNumber(mentions) + ' posts · ' + formatNumber(uniqueChannels) + ' channels</span></div>' +
-                    '<div class="discovery-meta"><span class="trend-badge' + trendClass + '">' + safe(trendLabel(item)) + '</span>' +
-                        '<span class="category-badge">' + safe(category) + '</span>' +
-                        '<span class="mention-badge">Trend ' + formatNumber(item.trend_score || 0) + '/100</span></div>' +
-                    '<div class="item-preview">' + safe(String(item.preview || "").replace(/https?:\/\/[^\s]+/g,"").trim()) + '</div>' +
-                    '<div class="discovery-note">' + safe(ageText) + ' · 6h posts: ' + formatNumber(item.mentions_6h || 0) +
-                        ' · prior 24h: ' + formatNumber(item.mentions_previous_24h || 0) +
-                        (item.growth_ratio !== null && item.growth_ratio !== undefined ? ' · growth ' + safe(item.growth_ratio) + 'x' : '') + '</div>' +
-                    '<div class="discovery-note">' + safe(viewText) + '</div>' + source + '</div>';
-            };
-            const renderSection = (title, items, icon, badge) => {
-                const displayed = sortItems(items || []).filter(matches);
-                return '<div class="explorer-section"><div class="explorer-title">' + title +
-                    ' (' + displayed.length + ')</div>' +
-                    (displayed.length ? displayed.map(item => linkCard(item, icon, badge)).join("") :
-                        '<div class="discovery-note">No items match these filters.</div>') + '</div>';
-            };
-            const allTrendItems = (data.top_rising || []).map(toDisplay);
-            const allNewItems = (data.top_new || []).map(toDisplay);
-            const domains = (data.top_100_domains || []).map(toDisplay);
-            const packages = sortItems(data.top_packages || []).filter(matches);
-
-            if (explorerCategory === "all" || explorerCategory === "rising") {
-                html += renderSection("📈 Rising Discoveries", allTrendItems, "📈", "Rise");
-            }
-            if (explorerCategory === "all" || explorerCategory === "new") {
-                html += renderSection("🆕 New Discoveries", allNewItems, "🆕", "New");
-            }
-            if (explorerCategory === "all" || explorerCategory === "ai") {
-                html += renderSection("🤖 AI Tools & Portals", data.top_ai_tools || [], "🤖", "AI");
-            }
-            if (explorerCategory === "all" || explorerCategory === "web") {
-                html += renderSection("🔮 Web Gems & Utilities", data.top_web_gems || [], "🌐", "Web");
-            }
-            if (explorerCategory === "all" || explorerCategory === "repos") {
-                html += renderSection("🐙 GitHub Repositories", data.top_repos || [], "🐙", "Repo");
-            }
-            if (explorerCategory === "all" || explorerCategory === "packages") {
-                html += '<div class="explorer-section"><div class="explorer-title">⚙️ Packages (' + packages.length + ')</div><div class="pill-grid">' +
-                    packages.map(p => '<span class="tag-badge">⚙️ ' + safe(p.package) + ' <b style="color:var(--primary);font-size:.7rem">(' + formatNumber(p.mentions) + ')</b></span>').join("") +
-                    '</div></div>';
-            }
-            if (explorerCategory === "all" || explorerCategory === "domains") {
-                html += renderSection("🌐 Top Domains", domains, "🔗", "Domain");
+            if (!filtered.length) {
+                html += '<div class="empty-state">' + (discoveryItems.length ? "No links match this search." : "No links loaded yet. Load a batch to begin.") + '</div>';
+            } else {
+                filtered.forEach(item => {
+                    const channels = Array.from(item.channels.values());
+                    const channelLinks = channels.map(name => {
+                        const channelUrl = discoveryTelegramChannel(name);
+                        return channelUrl
+                            ? '<a href="' + safe(channelUrl) + '" target="_blank" rel="noopener noreferrer">@' + safe(name) + '</a>'
+                            : '<span class="mention-badge">@' + safe(name) + '</span>';
+                    }).join("");
+                    const firstChannel = channels[0] || "";
+                    const canPurge = isAdmin && firstChannel;
+                    html += '<article class="discovery-link-card">' +
+                        '<div class="discovery-link-top"><a class="discovery-link-title" href="' + safe(item.url) + '" target="_blank" rel="noopener noreferrer">↗ ' + safe(item.title) + '</a>' +
+                        '<span class="mention-badge">' + item.count.toLocaleString() + ' appearances</span></div>' +
+                        '<div class="discovery-link-url">' + safe(item.url) + '</div>' +
+                        '<div class="discovery-link-snippet">' + safe(item.snippet || "No text preview available for this link.") + '</div>' +
+                        '<div class="discovery-link-meta"><span>Latest source: ' + formatDate(item.latestDate) + '</span><span>' + channels.length.toLocaleString() + ' source channels</span></div>' +
+                        '<div class="discovery-channel-list">' + (channelLinks || '<span class="discovery-warning">No channel username available in the feed record.</span>') + '</div>' +
+                        '<div class="discovery-link-actions"><a class="discovery-action primary" href="' + safe(item.url) + '" target="_blank" rel="noopener noreferrer">Open link ↗</a>' +
+                        (firstChannel && discoveryTelegramChannel(firstChannel) ? '<a class="discovery-action" href="' + safe(discoveryTelegramChannel(firstChannel)) + '" target="_blank" rel="noopener noreferrer">Open source channel</a>' : '') +
+                        (canPurge ? '<button type="button" class="discovery-action danger" data-discovery-purge="' + safe(firstChannel) + '">Block channel + purge posts</button>' : '') +
+                        '</div></article>';
+                });
             }
 
-            const updated = data.updated_at ? formatDate(data.updated_at) + " UTC" : "unknown";
-            const snapshotCount = Number((data.view_tracking || {}).posts_with_valid_repeat_snapshots || 0);
-            html = '<div class="explorer-section"><div class="explorer-title">Discovery status</div>' +
-                '<div class="discovery-note">Data updated: ' + safe(updated) +
-                ' · Trend sample: ' + formatNumber(data.scan_window_posts || 0) + ' posts' +
-                ' · Posts with repeat view snapshots: ' + formatNumber(snapshotCount) +
-                '. Trend uses Telegram post publication timestamps; view rates are averaged over actual snapshot gaps and do not determine trend labels.</div></div>' + html;
+            html += '</div><button type="button" class="discovery-action discovery-load-more" id="discoveryLoadMore" onclick="loadExplorerData()">' +
+                (discoveryHasMore ? "Load 30 more links" : "End of available feed") + '</button>';
 
+            if (isAdmin && discoveryAdminLog.length) {
+                html += '<div class="discovery-admin-log"><div class="explorer-title">Admin action log (this browser)</div>' +
+                    '<div class="discovery-warning">Audit history only. Restoring deleted database rows is not supported by the current API.</div>' +
+                    discoveryAdminLog.slice(0,10).map(entry =>
+                        '<div class="discovery-note">' + safe(entry.at) + ' · @' + safe(entry.username) + ' · ' + safe(entry.status) + '</div>'
+                    ).join("") + '</div>';
+            }
+
+            html += '</div>';
             explorerView.innerHTML = html;
-            const newSearch = document.getElementById("explorerSearch");
-            if (searchFocused && newSearch) {
+            const newSearch = document.getElementById("discoverySearch");
+            if (hadFocus && newSearch) {
                 newSearch.focus();
-                try { newSearch.setSelectionRange(cursor, cursor); } catch (_) {}
+                try { newSearch.setSelectionRange(cursor,cursor); } catch (_) {}
             }
-            if (query && !explorerView.querySelector(".item-card, .tag-badge")) {
-                explorerView.insertAdjacentHTML("beforeend", '<div class="empty-state">No discoveries match. Try another search or category.</div>');
+            updateDiscoveryLoadButton();
+        }
+
+        window.refreshDiscovery = function() {
+            discoveryQuery = "";
+            loadExplorerData(true);
+        };
+
+        async function purgeDiscoveryChannel(username, button) {
+            if (!isAdmin) {
+                alert("Admin access is required to block a channel.");
+                return;
+            }
+            const normalized = String(username || "").trim().replace(/^@/, "");
+            if (!normalized) return;
+            const confirmation = window.confirm(
+                "Block @" + normalized + " and request deletion of its channel record and posts from the database?\n\nThis action is destructive. The current API has no restore endpoint. Continue?"
+            );
+            if (!confirmation) return;
+
+            if (button) { button.disabled = true; button.textContent = "Purging…"; }
+            const statusEl = document.getElementById("statusBox");
+            try {
+                const response = await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(normalized)}`, {
+                    method: "POST",
+                    headers: { "X-Admin-Key": adminToken }
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || payload.success === false || payload.ok === false) {
+                    throw new Error(payload.error || payload.message || ("HTTP " + response.status));
+                }
+                saveDiscoveryAdminLog({at:new Date().toISOString(),username:normalized,status:"purge request accepted"});
+                // Remove only the purged source channel from grouped links. Keep a link if
+                // another channel also posted it.
+                discoveryItems.forEach(item => item.channels.delete(normalized.toLowerCase()));
+                discoveryItems = discoveryItems.filter(item => item.channels.size > 0);
+                discoverySeenUrls = new Map(discoveryItems.map(item => [item.key,item]));
+                renderExplorer();
+                statusEl.style.display = "block";
+                statusEl.textContent = "Purge request accepted for @" + normalized + ". Verify the server result before assuming every archive partition was changed.";
+            } catch (error) {
+                saveDiscoveryAdminLog({at:new Date().toISOString(),username:normalized,status:"purge failed: " + String(error.message || error)});
+                statusEl.style.display = "block";
+                statusEl.textContent = "Could not purge @" + normalized + ": " + String(error.message || error);
+                if (button) { button.disabled = false; button.textContent = "Block channel + purge posts"; }
             }
         }
+
+        document.addEventListener("click", event => {
+            const button = event.target.closest("[data-discovery-purge]");
+            if (button) purgeDiscoveryChannel(button.dataset.discoveryPurge, button);
+        });
+
+        document.addEventListener("input", event => {
+            if (event.target && event.target.id === "discoverySearch") renderExplorer();
+        });
+
+        window.addEventListener("scroll", () => {
+            if (currentView !== "explorer" || discoveryLoading || !discoveryHasMore) return;
+            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 450) {
+                loadExplorerData();
+            }
+        });
 
         window.setLang = function(lang, btnElement) {
             activeLang = lang;
