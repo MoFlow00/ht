@@ -329,11 +329,12 @@
             discoverySeenUrls = new Map();
         }
 
-        async function loadExplorerData(reset = false) {
+        async function loadExplorerData(reset = false, forceNextBatch = false) {
             if (reset) resetDiscoveryData();
             const explorerView = document.getElementById("explorerView");
             const statusEl = document.getElementById("statusBox");
             if (discoveryLoading) return;
+            if (discoveryLoaded && !forceNextBatch && !reset) { renderExplorer(); return; }
 
             discoveryLoading = true;
             statusEl.style.display = "block";
@@ -450,7 +451,7 @@
                 });
             }
 
-            html += '</div><button type="button" class="discovery-action discovery-load-more" id="discoveryLoadMore" onclick="loadExplorerData()">' +
+            html += '</div><button type="button" class="discovery-action discovery-load-more" id="discoveryLoadMore" onclick="loadExplorerData(false, true)">' +
                 (discoveryHasMore ? "Load 30 more links" : "End of available feed") + '</button>';
 
             if (isAdmin && discoveryAdminLog.length) {
