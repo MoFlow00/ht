@@ -272,7 +272,7 @@
         let discoveryItems = [];
         let discoverySeenUrls = new Map();
         let discoveryQuery = "";
-        let discoveryAdminLog = JSON.parse(localStorage.getItem("discovery_admin_log") || "[]");
+        let discoveryAdminLog = [];
 
         function normalizeDiscoveryUrl(rawUrl) {
             try {
@@ -334,7 +334,6 @@
             const explorerView = document.getElementById("explorerView");
             const statusEl = document.getElementById("statusBox");
             if (discoveryLoading) return;
-            if (discoveryLoaded && !reset) { renderExplorer(); return; }
 
             discoveryLoading = true;
             statusEl.style.display = "block";
@@ -420,7 +419,7 @@
                 '</div>' +
                 '<div class="discovery-meta"><span class="mention-badge">' + filtered.length.toLocaleString() + ' unique links</span>' +
                 '<span class="mention-badge">' + discoveryItems.reduce((sum,item) => sum + item.count, 0).toLocaleString() + ' link appearances</span>' +
-                '<span class="mention-badge">' + discoveryPostsPage - 1 + ' feed pages loaded</span></div>' +
+                '<span class="mention-badge">' + Math.max(0, discoveryPostsPage - 1).toLocaleString() + ' feed pages loaded</span></div>' +
                 '<div class="discovery-warning">Channel removal requires admin access and confirmation. The current API exposes purge, but no restore endpoint was found. The local log records the action and is not a database backup.</div>' +
                 '<div class="discovery-feed">';
 
@@ -501,8 +500,10 @@
                     throw new Error(payload.error || payload.message || ("HTTP " + response.status));
                 }
                 saveDiscoveryAdminLog({at:new Date().toISOString(),username:normalized,status:"purge request accepted"});
-                // Remove every displayed link whose source set contains the purged channel.
-                discoveryItems = discoveryItems.filter(item => !Array.from(item.channels.keys()).includes(normalized.toLowerCase()));
+                // Remove only the purged source channel from grouped links. Keep a link if
+                // another channel also posted it.
+                discoveryItems.forEach(item => item.channels.delete(normalized.toLowerCase()));
+                discoveryItems = discoveryItems.filter(item => item.channels.size > 0);
                 discoverySeenUrls = new Map(discoveryItems.map(item => [item.key,item]));
                 renderExplorer();
                 statusEl.style.display = "block";
