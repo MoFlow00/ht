@@ -423,6 +423,10 @@
                 return matchesDomain && matchesQuery;
             });
             const sortItems = items => items.sort((a,b) => {
+                if (discoveryDomainFilter === "all" && discoveryGroupByDomain) {
+                    const byDomain = domainOf(a).localeCompare(domainOf(b));
+                    if (byDomain) return byDomain;
+                }
                 if (discoverySortMode === "popular") return b.count - a.count || String(b.latestDate).localeCompare(String(a.latestDate));
                 if (discoverySortMode === "domain") return domainOf(a).localeCompare(domainOf(b)) || String(b.latestDate).localeCompare(String(a.latestDate));
                 return String(b.latestDate).localeCompare(String(a.latestDate)) || b.count - a.count;
