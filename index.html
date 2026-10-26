@@ -234,6 +234,7 @@
         let feedLayoutMode = localStorage.getItem("feed_layout_mode") === "grid" ? "grid" : "list";
         let discoveryLayoutMode = localStorage.getItem("discovery_layout_mode") === "grid" ? "grid" : "list";
         let currentPage = 1;
+        let feedShuffleSeed = 0;
         let isFetching = false;
         let hasMore = true;
         let activeQuery = "";
@@ -408,7 +409,7 @@
             statusEl.innerHTML = '<div class="spinner"></div>Loading link discoveries…';
             try {
                 const url = `${API_BASE}/api/feed?page=${discoveryPostsPage}&q=&lang=`;
-                const res = await fetch(url);
+                const res = await fetch(url, { cache: "no-store" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 const posts = Array.isArray(data.posts) ? data.posts : [];
@@ -697,8 +698,10 @@
             if (isReset) {
                 if (!activeQuery.trim() && !activeLang) {
                     currentPage = Math.floor(Math.random() * 40) + 1;
+                    feedShuffleSeed = Math.random();
                 } else {
                     currentPage = 1;
+                    feedShuffleSeed = 0;
                 }
                 hasMore = true;
                 document.getElementById("feedView").innerHTML = "";
@@ -721,7 +724,15 @@
                 }
 
                 if (data.posts && data.posts.length > 0) {
-                    renderPosts(data.posts);
+                    const postsToRender = data.posts.slice();
+                    // Shuffle unfiltered feed results on each fresh visit.
+                    if (!activeQuery.trim() && !activeLang) {
+                        for (let i = postsToRender.length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [postsToRender[i], postsToRender[j]] = [postsToRender[j], postsToRender[i]];
+                        }
+                    }
+                    renderPosts(postsToRender);
                     currentPage++;
                     hasMore = data.has_more;
                 } else if (isReset) {
