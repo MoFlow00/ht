@@ -285,9 +285,15 @@
                 parsed.hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
                 if ((parsed.protocol === "https:" && parsed.port === "443") ||
                     (parsed.protocol === "http:" && parsed.port === "80")) parsed.port = "";
-                // Tracking parameters do not create separate discoveries.
-                ["utm_source","utm_medium","utm_campaign","utm_term","utm_content","fbclid","gclid"].forEach(k => parsed.searchParams.delete(k));
-                return parsed.href.replace(/\/$/, "") || parsed.href;
+                // Remove common tracking parameters so the same destination is grouped once.
+                for (const key of [...parsed.searchParams.keys()]) {
+                    if (/^(utm_.+|fbclid|gclid|dclid|mc_cid|mc_eid|ref_src|igshid|si|feature)$/i.test(key)) {
+                        parsed.searchParams.delete(key);
+                    }
+                }
+                parsed.searchParams.sort();
+                if (parsed.pathname.length > 1) parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+                return parsed.href;
             } catch (_) {
                 return "";
             }
@@ -363,7 +369,15 @@
                             item = {
                                 key,
                                 url: key,
-                                title: (() => { try { return new URL(key).hostname.replace(/^www\./, ""); } catch (_) { return key; } })(),
+                                title: (() => {
+                                    try {
+                                        const parsed = new URL(key);
+                                        const host = parsed.hostname.replace(/^www\./, "");
+                                        const slug = parsed.pathname.split("/").filter(Boolean).pop();
+                                        const readable = slug ? decodeURIComponent(slug).replace(/[-_]+/g, " ").replace(/\.(html?|php|aspx?)$/i, "") : "";
+                                        return readable ? host + " · " + readable.slice(0, 70) : host;
+                                    } catch (_) { return key; }
+                                })(),
                                 snippet: text.replace(/(?:https?:\/\/|www\.)[^\s<>"'\]]+/gi, "").replace(/\s+/g, " ").trim().slice(0, 280),
                                 count: 0,
                                 channels: new Map(),
