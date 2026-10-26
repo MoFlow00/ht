@@ -266,7 +266,7 @@
 
         // Discovery Hub reads the existing paginated feed API, so no new response schema is assumed.
         // Only one feed page is requested when the user reaches the end of the current list.
-        const DISCOVERY_BATCH_SIZE = 30;
+        const DISCOVERY_BATCH_SIZE = 100;
         let discoveryPostsPage = 1;
         let discoveryHasMore = true;
         let discoveryLoading = false;
