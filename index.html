@@ -171,9 +171,12 @@
         .discovery-link-snippet { color:var(--text-main); font-size:.8rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
         .discovery-link-meta { display:flex; flex-wrap:wrap; gap:7px; align-items:center; color:var(--text-sub); font-size:.7rem; }
         .discovery-channel-list { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
-        .discovery-channel-chip { display:inline-flex; align-items:center; gap:4px; max-width:100%; border:1px solid var(--border); border-radius:7px; padding:2px 4px 2px 7px; color:var(--primary); font-size:.72rem; }
-        .discovery-icon-action { display:inline-flex; align-items:center; justify-content:center; width:23px; height:23px; border:0; border-radius:5px; background:var(--theme-btn-bg); color:var(--primary); text-decoration:none; font-size:.9rem; font-weight:700; cursor:pointer; }
-        .discovery-icon-action.danger { color:var(--danger); }
+        .discovery-channel-chip { display:flex; align-items:center; gap:6px; width:100%; min-width:0; border:1px solid var(--border); border-radius:7px; padding:3px 5px 3px 9px; font-size:.72rem; }
+        .discovery-channel-name { color:var(--primary); font-weight:700; text-decoration:none; overflow-wrap:anywhere; min-width:0; }
+        .discovery-channel-name:hover { text-decoration:underline; }
+        .discovery-channel-spacer { flex:1 1 auto; }
+        .discovery-icon-action { display:inline-flex; align-items:center; justify-content:center; flex:0 0 23px; width:23px; height:23px; border:0; border-radius:5px; background:var(--theme-btn-bg); color:var(--primary); text-decoration:none; font-size:.9rem; font-weight:700; cursor:pointer; }
+        .discovery-icon-action.danger { color:var(--danger); margin-left:auto; }
         .discovery-pagination { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; padding:10px 2px; flex-wrap:wrap; }\n        .discovery-page-label { color:var(--text-sub); font-size:.75rem; }
         .discovery-warning { color:var(--text-sub); font-size:.75rem; line-height:1.45; margin:5px 0 10px; }
         .discovery-admin-log { margin-top:12px; border-top:1px solid var(--border); padding-top:10px; }
@@ -545,13 +548,13 @@
                     const channels = Array.from(item.channels.values());
                     const channelLinks = channels.map(name => {
                         const channelUrl = discoveryTelegramChannel(name);
-                        const channelAction = channelUrl
-                            ? '<a class="discovery-icon-action" href="' + safe(channelUrl) + '" target="_blank" rel="noopener noreferrer" title="Open @' + safe(name) + '" aria-label="Open source channel @' + safe(name) + '">↗</a>'
-                            : '';
+                        const channelName = channelUrl
+                            ? '<a class="discovery-channel-name" href="' + safe(channelUrl) + '" target="_blank" rel="noopener noreferrer" title="Open @' + safe(name) + ' on Telegram">@' + safe(name) + '</a>'
+                            : '<span class="discovery-channel-name">@' + safe(name) + '</span>';
                         const purgeAction = isAdmin
                             ? '<button type="button" class="discovery-icon-action danger" data-discovery-purge="' + safe(name) + '" title="Block @' + safe(name) + ' and purge posts" aria-label="Block and purge @' + safe(name) + '">⊘</button>'
                             : '';
-                        return '<span class="discovery-channel-chip"><span>@' + safe(name) + '</span>' + channelAction + purgeAction + '</span>';
+                        return '<span class="discovery-channel-chip">' + channelName + '<span class="discovery-channel-spacer"></span>' + purgeAction + '</span>';
                     }).join("");
                     html += '<article class="discovery-link-card">' +
                         '<div class="discovery-link-top"><a class="discovery-link-title" href="' + safe(item.url) + '" target="_blank" rel="noopener noreferrer">↗ ' + safe(item.title) + '</a>' +
