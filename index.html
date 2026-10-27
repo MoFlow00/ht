@@ -174,7 +174,7 @@
         .discovery-channel-chip { display:inline-flex; align-items:center; gap:4px; max-width:100%; border:1px solid var(--border); border-radius:7px; padding:2px 4px 2px 7px; color:var(--primary); font-size:.72rem; }
         .discovery-icon-action { display:inline-flex; align-items:center; justify-content:center; width:23px; height:23px; border:0; border-radius:5px; background:var(--theme-btn-bg); color:var(--primary); text-decoration:none; font-size:.9rem; font-weight:700; cursor:pointer; }
         .discovery-icon-action.danger { color:var(--danger); }
-        .discovery-pagination { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; flex-wrap:wrap; }\n        .discovery-page-label { color:var(--text-sub); font-size:.75rem; }
+        .discovery-pagination { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; padding:10px 2px; flex-wrap:wrap; }\n        .discovery-page-label { color:var(--text-sub); font-size:.75rem; }
         .discovery-warning { color:var(--text-sub); font-size:.75rem; line-height:1.45; margin:5px 0 10px; }
         .discovery-admin-log { margin-top:12px; border-top:1px solid var(--border); padding-top:10px; }
         @media (prefers-reduced-motion: reduce) { .spinner { animation:none; } }
@@ -506,9 +506,9 @@
                 return String(b.latestDate).localeCompare(String(a.latestDate)) || b.count - a.count;
             });
             sortItems(filtered);
-            const totalPages = Math.max(1, Math.ceil(filtered.length / DISCOVERY_BATCH_SIZE));
-            discoveryVisiblePage = Math.min(discoveryVisiblePage, totalPages - 1);
-            const pageItems = filtered.slice(discoveryVisiblePage * DISCOVERY_BATCH_SIZE, (discoveryVisiblePage + 1) * DISCOVERY_BATCH_SIZE);
+            const visibleLimit = (discoveryVisiblePage + 1) * DISCOVERY_BATCH_SIZE;
+            const pageItems = filtered.slice(0, visibleLimit);
+            const hasHiddenLoadedItems = filtered.length > pageItems.length;
 
             let html = '<div class="explorer-section">' +
                 '<div class="explorer-title">🔮 Discovery Hub · Link Radar</div>' +
@@ -528,7 +528,7 @@
                 '</div>' +
                 '<div class="discovery-meta"><span class="mention-badge">' + filtered.length.toLocaleString() + ' matching links</span>' +
                 '<span class="mention-badge">' + discoveryItems.reduce((sum,item) => sum + item.count, 0).toLocaleString() + ' appearances</span>' +
-                '<span class="mention-badge">' + pageItems.length.toLocaleString() + ' on this page · ' + (discoveryVisiblePage + 1) + '/' + totalPages + ' pages</span></div>' +
+                '<span class="mention-badge">' + pageItems.length.toLocaleString() + ' links shown</span></div>' +
                 '<div class="discovery-feed">';
 
             if (!filtered.length) {
@@ -564,10 +564,9 @@
                 });
             }
 
-            html += '</div><div class="discovery-pagination">' +
-                '<button type="button" class="discovery-action" ' + (discoveryVisiblePage === 0 ? 'disabled' : '') + ' onclick="changeDiscoveryPage(-1)">← Previous 100</button>' +
-                '<span class="discovery-page-label">Page ' + (discoveryVisiblePage + 1) + ' / ' + totalPages + '</span>' +
-                '<button type="button" class="discovery-action" ' + (discoveryVisiblePage + 1 >= totalPages && !discoveryHasMore ? 'disabled' : '') + ' onclick="changeDiscoveryPage(1)">' + (discoveryVisiblePage + 1 < totalPages ? 'Next 100 →' : 'Load more links →') + '</button></div>';
+            html += '</div><div class="discovery-pagination" id="discoveryScrollStatus"><span class="discovery-page-label">' +
+                (hasHiddenLoadedItems ? 'Scroll to show more links' : discoveryHasMore ? 'Scroll to load more links' : 'You have reached the end of available links') +
+                '</span><span class="discovery-page-label">' + pageItems.length.toLocaleString() + ' / ' + filtered.length.toLocaleString() + ' shown</span></div>';
 
             if (isAdmin && discoveryAdminLog.length) {
                 html += '<div class="discovery-admin-log"><div class="explorer-title">Admin action log</div>' +
@@ -587,23 +586,6 @@
             }
             updateDiscoveryLoadButton();
         }
-
-        window.changeDiscoveryPage = async function(direction) {
-            const totalPages = Math.max(1, Math.ceil(discoveryItems.filter(item => {
-                let domain = "unknown domain";
-                try { domain = new URL(item.url).hostname.toLowerCase().replace(/^www\\./, ""); } catch (_) {}
-                return (discoveryDomainFilter === "all" || domain === discoveryDomainFilter) &&
-                    [item.url, domain, item.title, item.snippet, ...item.channels.values()].join(" ").toLowerCase().includes(discoveryQuery);
-            }).length / DISCOVERY_BATCH_SIZE));
-            if (direction > 0 && discoveryVisiblePage + 1 >= totalPages && discoveryHasMore) {
-                const before = discoveryItems.length;
-                await loadExplorerData(false, true);
-                if (discoveryItems.length > before) discoveryVisiblePage++;
-            } else {
-                discoveryVisiblePage = Math.max(0, Math.min(totalPages - 1, discoveryVisiblePage + direction));
-            }
-            renderExplorer();
-        };
 
         window.refreshDiscovery = function() {
             discoveryQuery = "";
@@ -673,11 +655,37 @@
             }
         });
 
+        let discoveryScrollTicking = false;
         window.addEventListener("scroll", () => {
-            if (currentView !== "explorer" || discoveryLoading || !discoveryHasMore) return;
-            if ((window.innerHeight + window.scrollY) >= document.body.offsetHeight - 450) {
-                loadExplorerData();
-            }
+            if (currentView !== "explorer" || discoveryLoading || discoveryScrollTicking) return;
+            if ((window.innerHeight + window.scrollY) < document.body.offsetHeight - 500) return;
+            discoveryScrollTicking = true;
+            requestAnimationFrame(async () => {
+                try {
+                    const oldSearch = document.getElementById("discoverySearch");
+                    const query = (oldSearch?.value || discoveryQuery).trim().toLowerCase();
+                    const domainOf = item => { try { return new URL(item.url).hostname.toLowerCase().replace(/^www\\./, ""); } catch (_) { return "unknown domain"; } };
+                    const matchingCount = discoveryItems.filter(item => {
+                        const domain = domainOf(item);
+                        return (discoveryDomainFilter === "all" || domain === discoveryDomainFilter) &&
+                            [item.url, domain, item.title, item.snippet, ...item.channels.values()].join(" ").toLowerCase().includes(query);
+                    }).length;
+                    const visibleCount = (discoveryVisiblePage + 1) * DISCOVERY_BATCH_SIZE;
+                    if (matchingCount > visibleCount) {
+                        discoveryVisiblePage++;
+                        renderExplorer();
+                    } else if (discoveryHasMore) {
+                        const before = discoveryItems.length;
+                        await loadExplorerData(false, true);
+                        if (discoveryItems.length > before) {
+                            discoveryVisiblePage++;
+                            renderExplorer();
+                        }
+                    }
+                } finally {
+                    discoveryScrollTicking = false;
+                }
+            });
         });
 
         window.setLang = function(lang, btnElement) {
