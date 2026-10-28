@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from huggingface_hub import hf_hub_download
 
 # ==================== الإعدادات ====================
-CHANNELS_TO_SCRAPE_PER_RUN = 1500  # فحص 1,500 قناة في كل جولة
-CONCURRENT_REQUESTS = 12          # سرعة توازي متزنة وآمنة
+CHANNELS_TO_SCRAPE_PER_RUN = 5000  # فحص 1,500 قناة في كل جولة
+CONCURRENT_REQUESTS = 20          # سرعة توازي متزنة وآمنة
 OUTPUT_DIR = "crawler_output"
 # ===================================================
 
