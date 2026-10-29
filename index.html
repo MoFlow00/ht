@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>DevRadar • Telegram Intelligence Hub</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -411,7 +414,7 @@
             statusEl.style.display = "block";
             statusEl.innerHTML = '<div class="spinner"></div>Loading link discoveries…';
             try {
-                const url = `${API_BASE}/api/feed?page=${discoveryPostsPage}&q=&lang=`;
+                const url = `${API_BASE}/api/feed?page=${discoveryPostsPage}&q=&lang=&_ts=${Date.now()}`;
                 const res = await fetch(url, { cache: "no-store" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
@@ -719,8 +722,8 @@
             }
 
             try {
-                const url = `${API_BASE}/api/feed?page=${currentPage}&q=${encodeURIComponent(activeQuery)}&lang=${encodeURIComponent(activeLang)}`;
-                const res = await fetch(url);
+                const url = `${API_BASE}/api/feed?page=${currentPage}&q=${encodeURIComponent(activeQuery)}&lang=${encodeURIComponent(activeLang)}&_ts=${Date.now()}`;
+                const res = await fetch(url, { cache: "no-store" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
 
