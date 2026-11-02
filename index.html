@@ -171,7 +171,7 @@
         .discovery-simple-source { flex:0 1 125px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-sub); }
         .discovery-simple-source a { color:var(--text-sub); text-decoration:none; }
         .discovery-simple-views { flex:0 0 auto; color:var(--text-sub); white-space:nowrap; font-size:.72rem; }
-        .discovery-simple-delete { flex:0 0 auto; border:1px solid var(--danger); border-radius:6px; background:transparent; color:var(--danger); padding:4px 6px; font-size:.68rem; font-weight:700; cursor:pointer; }
+        .discovery-simple-delete { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:29px; height:29px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--danger); padding:5px; cursor:pointer; }\n        .discovery-simple-delete:hover { background:var(--theme-btn-bg); border-color:var(--border); }\n        .discovery-simple-delete svg { width:16px; height:16px; fill:currentColor; }
         .discovery-simple-delete:disabled { opacity:.5; cursor:wait; }
         .discovery-filter-bar { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; margin:0 0 10px; }
         .discovery-filter-bar input { width:100%; min-width:0; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:10px 11px; font-size:.82rem; }
@@ -471,7 +471,7 @@
                     ? '<a class="discovery-simple-channel" href="' + safe(channelUrl) + '" target="_blank" rel="noopener noreferrer">@' + safe(item.username) + '</a>'
                     : '<span class="discovery-simple-channel">' + (item.username ? '@' + safe(item.username) : 'Unknown channel') + '</span>';
                 const deleteButton = isAdmin && item.username
-                    ? '<button type="button" class="discovery-simple-delete" data-purge-username="' + safe(item.username) + '" title="Delete this channel and all its posts">Delete channel</button>'
+                    ? '<button type="button" class="discovery-simple-delete" data-purge-username="' + safe(item.username) + '" title="Delete channel and all its posts" aria-label="Delete channel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>'
                     : '';
                 return '<div class="discovery-simple-row">' +
                     '<a class="discovery-simple-url" href="' + safe(item.url) + '" target="_blank" rel="noopener noreferrer">' + safe(item.url) + '</a>' +
@@ -733,7 +733,7 @@
                 button => String(button.dataset.purgeUsername || "").toLowerCase() === normalizedLower
             );
             const statusEl = document.getElementById("statusBox");
-            buttons.forEach(button => { button.disabled = true; button.textContent = "Deleting…"; });
+            buttons.forEach(button => { button.disabled = true; button.innerHTML = "…"; });
             try {
                 const res = await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(normalizedUsername)}`, {
                     method: "POST",
@@ -751,7 +751,7 @@
                     statusEl.style.display = "block";
                 }
             } catch (error) {
-                buttons.forEach(button => { button.disabled = false; button.textContent = "Delete channel"; });
+                buttons.forEach(button => { button.disabled = false; button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>'; });
                 if (statusEl) {
                     statusEl.textContent = `Could not purge @${normalizedUsername}. ${error.message}. Posts were kept; please retry.`;
                     statusEl.style.display = "block";
