@@ -315,6 +315,7 @@
 
         window.switchView = function(view) {
             currentView = view;
+            localStorage.setItem("last_active_view", view === "explorer" ? "explorer" : "feed");
             applyLayoutMode("feed", feedLayoutMode);
             applyLayoutMode("explorer", discoveryLayoutMode);
             const feedView = document.getElementById("feedView");
@@ -798,7 +799,9 @@
 
         (async () => {
             await verifyAdminWithServer();
-            fetchFeed(true);
+            const savedView = localStorage.getItem("last_active_view") === "explorer" ? "explorer" : "feed";
+            if (savedView === "explorer") switchView("explorer");
+            else { switchView("feed"); fetchFeed(true); }
         })();
     </script>
 </body>
