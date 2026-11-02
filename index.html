@@ -350,6 +350,8 @@
         let discoveryItems = [];
         let discoverySearchTerm = "";
         let discoveryExcludeTerms = "";
+        let discoveryLastServerQuery = "";
+        let discoverySearchTimer = null;
 
         function normalizeDiscoveryUrl(rawUrl) {
             try {
@@ -397,7 +399,8 @@
             statusEl.style.display = "block";
             statusEl.innerHTML = '<div class="spinner"></div>Loading links…';
             try {
-                const url = `${API_BASE}/api/feed?page=${discoveryPostsPage}&q=&lang=&_ts=${Date.now()}`;
+                const serverQuery = discoverySearchTerm.trim();
+                const url = `${API_BASE}/api/feed?page=${discoveryPostsPage}&q=${encodeURIComponent(serverQuery)}&lang=&_ts=${Date.now()}`;
                 const res = await fetch(url, { cache: "no-store" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
@@ -485,8 +488,21 @@
         window.updateDiscoveryFilters = function() {
             const search = document.getElementById("discoverySearchInput");
             const exclude = document.getElementById("discoveryExcludeInput");
-            discoverySearchTerm = search ? search.value : "";
+            const nextSearch = search ? search.value.trim() : "";
             discoveryExcludeTerms = exclude ? exclude.value : "";
+
+            if (nextSearch !== discoveryLastServerQuery) {
+                discoverySearchTerm = nextSearch;
+                discoveryVisibleCount = DISCOVERY_BATCH_SIZE;
+                clearTimeout(discoverySearchTimer);
+                discoverySearchTimer = setTimeout(() => {
+                    discoveryLastServerQuery = nextSearch;
+                    loadExplorerData(true);
+                }, 350);
+                return;
+            }
+
+            discoverySearchTerm = nextSearch;
             discoveryVisibleCount = DISCOVERY_BATCH_SIZE;
             renderDiscoveryRows();
         };
