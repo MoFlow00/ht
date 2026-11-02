@@ -171,6 +171,8 @@
         .discovery-simple-source { flex:0 1 125px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-sub); }
         .discovery-simple-source a { color:var(--text-sub); text-decoration:none; }
         .discovery-simple-views { flex:0 0 auto; color:var(--text-sub); white-space:nowrap; font-size:.72rem; }
+        .discovery-simple-delete { flex:0 0 auto; border:1px solid var(--danger); border-radius:6px; background:transparent; color:var(--danger); padding:4px 6px; font-size:.68rem; font-weight:700; cursor:pointer; }
+        .discovery-simple-delete:disabled { opacity:.5; cursor:wait; }
         .discovery-filter-bar { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; margin:0 0 10px; }
         .discovery-filter-bar input { width:100%; min-width:0; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:10px 11px; font-size:.82rem; }
         .discovery-filter-label { color:var(--text-sub); font-size:.7rem; margin:0 0 -3px 2px; }
@@ -402,10 +404,13 @@
                 const posts = Array.isArray(data.posts) ? data.posts : [];
                 discoveryHasMore = Boolean(data.has_more);
 
+                const knownUrls = new Set(discoveryItems.map(item => item.url));
                 posts.forEach(post => {
                     const username = discoveryChannelName(post);
                     const views = formatDiscoveryViews(post.views);
                     extractDiscoveryUrls(post.text).forEach(link => {
+                        if (knownUrls.has(link)) return;
+                        knownUrls.add(link);
                         discoveryItems.push({
                             url: link,
                             username,
@@ -465,10 +470,14 @@
                 const channel = channelUrl
                     ? '<a class="discovery-simple-channel" href="' + safe(channelUrl) + '" target="_blank" rel="noopener noreferrer">@' + safe(item.username) + '</a>'
                     : '<span class="discovery-simple-channel">' + (item.username ? '@' + safe(item.username) : 'Unknown channel') + '</span>';
+                const deleteButton = isAdmin && item.username
+                    ? '<button type="button" class="discovery-simple-delete" data-purge-username="' + safe(item.username) + '" title="Delete this channel and all its posts">Delete channel</button>'
+                    : '';
                 return '<div class="discovery-simple-row">' +
                     '<a class="discovery-simple-url" href="' + safe(item.url) + '" target="_blank" rel="noopener noreferrer">' + safe(item.url) + '</a>' +
                     '<span class="discovery-simple-source">' + channel + '</span>' +
                     '<span class="discovery-simple-views">👁 ' + safe(item.views) + '</span>' +
+                    deleteButton +
                     '</div>';
             }).join("");
         }
@@ -714,12 +723,17 @@
             if (!isAdmin) return;
             const normalizedUsername = String(username || "").trim().replace(/^@/, "");
             if (!normalizedUsername) return;
+            if (!window.confirm(`Delete @${normalizedUsername} and all its posts from the database?`)) return;
+
+            const normalizedLower = normalizedUsername.toLowerCase();
             const cards = Array.from(document.querySelectorAll(".card")).filter(
-                card => (card.dataset.username || "").toLowerCase() === normalizedUsername.toLowerCase()
+                card => (card.dataset.username || "").toLowerCase() === normalizedLower
             );
-            const buttons = cards.flatMap(card => Array.from(card.querySelectorAll(".btn-trash")));
+            const buttons = Array.from(document.querySelectorAll("[data-purge-username]")).filter(
+                button => String(button.dataset.purgeUsername || "").toLowerCase() === normalizedLower
+            );
             const statusEl = document.getElementById("statusBox");
-            buttons.forEach(button => { button.disabled = true; button.setAttribute("aria-label", `Removing @${normalizedUsername}…`); });
+            buttons.forEach(button => { button.disabled = true; button.textContent = "Deleting…"; });
             try {
                 const res = await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(normalizedUsername)}`, {
                     method: "POST",
@@ -730,17 +744,23 @@
                     throw new Error(payload?.error || payload?.message || `Server returned HTTP ${res.status}`);
                 }
                 cards.forEach(card => card.remove());
-                statusEl.textContent = `Purge request accepted for @${normalizedUsername}.`;
-                statusEl.style.display = "block";
+                discoveryItems = discoveryItems.filter(item => item.username.toLowerCase() !== normalizedLower);
+                if (currentView === "explorer") renderDiscoveryRows();
+                if (statusEl) {
+                    statusEl.textContent = `Purge request accepted for @${normalizedUsername}.`;
+                    statusEl.style.display = "block";
+                }
             } catch (error) {
-                buttons.forEach(button => { button.disabled = false; button.removeAttribute("aria-label"); });
-                statusEl.textContent = `Could not purge @${normalizedUsername}. ${error.message}. Posts were kept; please retry.`;
-                statusEl.style.display = "block";
+                buttons.forEach(button => { button.disabled = false; button.textContent = "Delete channel"; });
+                if (statusEl) {
+                    statusEl.textContent = `Could not purge @${normalizedUsername}. ${error.message}. Posts were kept; please retry.`;
+                    statusEl.style.display = "block";
+                }
             }
         }
 
         document.addEventListener("click", event => {
-            const button = event.target.closest(".btn-trash[data-purge-username]");
+            const button = event.target.closest(".btn-trash[data-purge-username], .discovery-simple-delete[data-purge-username]");
             if (button) purgeChannel(button.dataset.purgeUsername);
         });
 
