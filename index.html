@@ -369,6 +369,15 @@
             return matches.map(value => normalizeDiscoveryUrl(value.startsWith("www.") ? "https://" + value : value)).filter(Boolean);
         }
 
+        function shuffleDiscoveryArray(items) {
+            const shuffled = items.slice();
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
         function discoveryChannelName(post) {
             return String(post?.username || post?.channel || "").trim().replace(/^@/, "");
         }
@@ -408,10 +417,11 @@
                 discoveryHasMore = Boolean(data.has_more);
 
                 const knownUrls = new Set(discoveryItems.map(item => item.url));
-                posts.forEach(post => {
+                // Randomize each fetched batch so every Discovery refresh starts with a different order.
+                shuffleDiscoveryArray(posts).forEach(post => {
                     const username = discoveryChannelName(post);
                     const views = formatDiscoveryViews(post.views);
-                    extractDiscoveryUrls(post.text).forEach(link => {
+                    shuffleDiscoveryArray(extractDiscoveryUrls(post.text)).forEach(link => {
                         if (knownUrls.has(link)) return;
                         knownUrls.add(link);
                         discoveryItems.push({
