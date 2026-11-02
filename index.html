@@ -171,6 +171,10 @@
         .discovery-simple-source { flex:0 1 125px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-sub); }
         .discovery-simple-source a { color:var(--text-sub); text-decoration:none; }
         .discovery-simple-views { flex:0 0 auto; color:var(--text-sub); white-space:nowrap; font-size:.72rem; }
+        .discovery-filter-bar { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; margin:0 0 10px; }
+        .discovery-filter-bar input { width:100%; min-width:0; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:10px 11px; font-size:.82rem; }
+        .discovery-filter-label { color:var(--text-sub); font-size:.7rem; margin:0 0 -3px 2px; }
+        .discovery-results-count { color:var(--text-sub); font-size:.72rem; margin:0 0 6px; }
         @media (max-width:480px) { .discovery-simple-row { gap:6px; font-size:.7rem; } .discovery-simple-source { flex-basis:85px; } }
         .discovery-domain-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 2px 2px; color:var(--text-sub); font-size:.76rem; font-weight:700; }
         .discovery-link-card { border:1px solid var(--border); border-radius:10px; padding:10px; background:var(--bg-card); display:flex; flex-direction:column; gap:6px; }
@@ -296,8 +300,7 @@
                 discoveryLayoutMode = normalizedMode;
                 localStorage.setItem("discovery_layout_mode", normalizedMode);
                 document.getElementById("explorerView").classList.toggle("discovery-grid-mode", normalizedMode === "grid");
-            }
-            document.querySelectorAll('[data-layout-view="' + view + '"]').forEach(button => {
+            }            document.querySelectorAll('[data-layout-view="' + view + '"]').forEach(button => {
                 button.classList.toggle("active", button.dataset.layoutMode === normalizedMode);
                 button.setAttribute("aria-pressed", button.dataset.layoutMode === normalizedMode ? "true" : "false");
             });
@@ -343,6 +346,8 @@
         let discoveryLoading = false;
         let discoveryLoaded = false;
         let discoveryItems = [];
+        let discoverySearchTerm = "";
+        let discoveryExcludeTerms = "";
 
         function normalizeDiscoveryUrl(rawUrl) {
             try {
@@ -431,33 +436,69 @@
                 discoveryHasMore ? "Scroll down to load more links" : "End of available links";
         }
 
+        function getFilteredDiscoveryItems() {
+            const search = discoverySearchTerm.trim().toLowerCase();
+            const excluded = discoveryExcludeTerms.split(/[，,\n;]+/).map(term => term.trim().toLowerCase()).filter(Boolean);
+            return discoveryItems.filter(item => {
+                const url = String(item.url || "").toLowerCase();
+                if (search && !url.includes(search)) return false;
+                if (excluded.some(term => url.includes(term))) return false;
+                return true;
+            });
+        }
+
+        function renderDiscoveryRows() {
+            const safe = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+            const list = document.getElementById("discoveryFeedRows");
+            const count = document.getElementById("discoveryResultsCount");
+            if (!list || !count) return;
+            const filtered = getFilteredDiscoveryItems();
+            const visible = filtered.slice(0, discoveryVisibleCount);
+            count.textContent = visible.length.toLocaleString() + " matching links shown · " + filtered.length.toLocaleString() + " loaded matches";
+            if (!visible.length) {
+                list.innerHTML = '<div class="empty-state">No matching links in the loaded posts.</div>';
+                return;
+            }
+            list.innerHTML = visible.map(item => {
+                const channelUrl = /^[a-zA-Z0-9_]{5,}$/.test(item.username)
+                    ? "https://t.me/" + encodeURIComponent(item.username) : "";
+                const channel = channelUrl
+                    ? '<a class="discovery-simple-channel" href="' + safe(channelUrl) + '" target="_blank" rel="noopener noreferrer">@' + safe(item.username) + '</a>'
+                    : '<span class="discovery-simple-channel">' + (item.username ? '@' + safe(item.username) : 'Unknown channel') + '</span>';
+                return '<div class="discovery-simple-row">' +
+                    '<a class="discovery-simple-url" href="' + safe(item.url) + '" target="_blank" rel="noopener noreferrer">' + safe(item.url) + '</a>' +
+                    '<span class="discovery-simple-source">' + channel + '</span>' +
+                    '<span class="discovery-simple-views">👁 ' + safe(item.views) + '</span>' +
+                    '</div>';
+            }).join("");
+        }
+
+        window.updateDiscoveryFilters = function() {
+            const search = document.getElementById("discoverySearchInput");
+            const exclude = document.getElementById("discoveryExcludeInput");
+            discoverySearchTerm = search ? search.value : "";
+            discoveryExcludeTerms = exclude ? exclude.value : "";
+            discoveryVisibleCount = DISCOVERY_BATCH_SIZE;
+            renderDiscoveryRows();
+        };
+
         function renderExplorer() {
             const explorerView = document.getElementById("explorerView");
             const safe = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
-            const visible = discoveryItems.slice(0, discoveryVisibleCount);
             let html = '<div class="explorer-section">' +
                 '<div class="explorer-title">🔮 Discovery Hub · All Links</div>' +
-                '<div class="discovery-feed">';
-            if (!visible.length) {
-                html += '<div class="empty-state">No links found in the loaded posts.</div>';
-            } else {
-                visible.forEach(item => {
-                    const channelUrl = /^[a-zA-Z0-9_]{5,}$/.test(item.username)
-                        ? "https://t.me/" + encodeURIComponent(item.username) : "";
-                    const channel = channelUrl
-                        ? '<a class="discovery-simple-channel" href="' + safe(channelUrl) + '" target="_blank" rel="noopener noreferrer">@' + safe(item.username) + '</a>'
-                        : '<span class="discovery-simple-channel">' + (item.username ? '@' + safe(item.username) : 'Unknown channel') + '</span>';
-                    html += '<div class="discovery-simple-row">' +
-                        '<a class="discovery-simple-url" href="' + safe(item.url) + '" target="_blank" rel="noopener noreferrer">' + safe(item.url) + '</a>' +
-                        '<span class="discovery-simple-source">' + channel + '</span>' +
-                        '<span class="discovery-simple-views">👁 ' + safe(item.views) + '</span>' +
-                        '</div>';
-                });
-            }
-            html += '</div><div class="discovery-pagination" id="discoveryScrollStatus">' +
+                '<div class="discovery-filter-bar">' +
+                '<input id="discoverySearchInput" type="search" placeholder="Search links, e.g. github" value="' + safe(discoverySearchTerm) + '" oninput="updateDiscoveryFilters()">' +
+                '<label class="discovery-filter-label" for="discoveryExcludeInput">Exclude links containing these words, separate with commas</label>' +
+                '<input id="discoveryExcludeInput" type="text" placeholder="github, proxy" value="' + safe(discoveryExcludeTerms) + '" oninput="updateDiscoveryFilters()">' +
+                '</div>' +
+                '<div class="discovery-results-count" id="discoveryResultsCount"></div>' +
+                '<div class="discovery-feed" id="discoveryFeedRows"></div>' +
+                '<div class="discovery-pagination" id="discoveryScrollStatus">' +
                 (discoveryHasMore ? 'Scroll down to load more links' : 'End of available links') +
                 '</div></div>';
             explorerView.innerHTML = html;
+            renderDiscoveryRows();
         }
 
         window.refreshDiscovery = function() {
@@ -467,8 +508,7 @@
         let discoveryScrollTicking = false;
         window.addEventListener("scroll", () => {
             if (currentView !== "explorer" || discoveryLoading || discoveryScrollTicking) return;
-            if ((window.innerHeight + window.scrollY) < document.body.offsetHeight - 500) return;
-            discoveryScrollTicking = true;
+            if ((window.innerHeight + window.scrollY) < document.body.offsetHeight - 500) return;            discoveryScrollTicking = true;
             requestAnimationFrame(async () => {
                 try {
                     if (discoveryVisibleCount < discoveryItems.length) {
