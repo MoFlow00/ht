@@ -497,7 +497,7 @@
                 discoveryLoaded = true;
                 statusEl.style.display = "none";
                 renderExplorer();
-                if (!posts.length) discoveryHasMore = false;
+                if (links.length === 0) discoveryHasMore = false;
             } catch (error) {
                 statusEl.style.display = "block";
                 statusEl.textContent = "Could not load links. " + String(error.message || error);
