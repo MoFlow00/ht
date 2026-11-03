@@ -172,6 +172,7 @@
 
     <script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
+        const API_VERSION = "2.0.0";
         const urlParams = new URLSearchParams(window.location.search);
         let adminToken = urlParams.get("admin") || sessionStorage.getItem("admin_token") || "";
 
@@ -650,9 +651,10 @@
             const statusEl = document.getElementById("statusBox");
             buttons.forEach(button => { button.disabled = true; button.setAttribute("aria-label", `Removing @${normalizedUsername}…`); });
             try {
-                const res = await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(normalizedUsername)}`, {
+                const res = await fetch(`${API_BASE}/api/purge`, {
                     method: "POST",
-                    headers: { "X-Admin-Key": adminToken }
+                    headers: { "X-Admin-Key": adminToken, "Content-Type": "application/json" },
+                    body: JSON.stringify({ username: normalizedUsername })
                 });
                 const payload = await res.clone().json().catch(() => null);
                 if (!res.ok || payload?.success === false || payload?.ok === false) {
