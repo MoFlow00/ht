@@ -93,7 +93,7 @@ async function feedLinks(url,env) {
     const username=norm(post?.username);
     if(!username || blocked.has(username)) continue;
     const text=String(post?.text??"");
-    const context=text.replace(urlPattern," ").replace(/\\s+/g," ").trim().slice(0,220);
+    const context=text.replace(urlPattern," ").replace(/\s+/g," ").trim().slice(0,220);
     for(const match of text.matchAll(urlPattern)) {
       let raw=String(match[0]).replace(/[),.;!?]+$/,"");
       if(raw.startsWith("www.")) raw="https://"+raw;
