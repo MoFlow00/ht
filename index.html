@@ -144,6 +144,14 @@
                 <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()">🌙 Dark</button>
             </div>
 
+            <div class="admin-access" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                <input id="adminKeyInput" type="password" autocomplete="current-password" placeholder="Admin key"
+                    aria-label="Admin key" style="flex:1;min-width:150px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text-main);">
+                <button class="theme-toggle-btn" id="adminLoginBtn" onclick="loginAdmin()">Admin login</button>
+                <button class="theme-toggle-btn" id="adminLogoutBtn" onclick="logoutAdmin()" style="display:none;">Logout</button>
+                <span id="adminStatus" role="status" style="font-size:.78rem;color:var(--text-sub);">Read-only mode</span>
+            </div>
+
             <div id="feedControls" style="display: flex; flex-direction: column; gap: 8px;">
                 <div class="search-box-wrap">
                     <input type="text" id="searchInput" placeholder="Search 8,000+ curated posts..." onkeypress="if(event.key === 'Enter') triggerSearch()">
@@ -173,8 +181,7 @@
     <script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
         const API_VERSION = "2.0.0";
-        const urlParams = new URLSearchParams(window.location.search);
-        let adminToken = urlParams.get("admin") || sessionStorage.getItem("admin_token") || "";
+        let adminToken = sessionStorage.getItem("admin_token") || "";
 
         let isAdmin = false;
         let currentView = "feed";
@@ -184,19 +191,67 @@
         let activeQuery = "";
         let activeLang = "";
 
+        function updateAdminControls() {
+            const input = document.getElementById("adminKeyInput");
+            const login = document.getElementById("adminLoginBtn");
+            const logout = document.getElementById("adminLogoutBtn");
+            const status = document.getElementById("adminStatus");
+            if (input) input.style.display = isAdmin ? "none" : "block";
+            if (login) login.style.display = isAdmin ? "none" : "inline-block";
+            if (logout) logout.style.display = isAdmin ? "inline-block" : "none";
+            if (status) {
+                status.textContent = isAdmin ? "Admin access active" : "Read-only mode";
+                status.style.color = isAdmin ? "#16a34a" : "var(--text-sub)";
+            }
+        }
+
         async function verifyAdminWithServer() {
-            if (!adminToken) return;
+            if (!adminToken) { isAdmin = false; updateAdminControls(); return false; }
             try {
                 const res = await fetch(`${API_BASE}/api/verify_admin`, {
-                    headers: { "X-Admin-Key": adminToken }
+                    headers: { "X-Admin-Key": adminToken },
+                    cache: "no-store"
                 });
                 const data = await res.json();
-                if (data.is_admin) {
-                    isAdmin = true;
-                    sessionStorage.setItem("admin_token", adminToken);
+                isAdmin = res.ok && data.is_admin === true;
+                if (isAdmin) sessionStorage.setItem("admin_token", adminToken);
+                else {
+                    adminToken = "";
+                    sessionStorage.removeItem("admin_token");
                 }
-            } catch (e) {}
+            } catch (e) {
+                isAdmin = false;
+                adminToken = "";
+                sessionStorage.removeItem("admin_token");
+            }
+            updateAdminControls();
+            return isAdmin;
         }
+
+        window.loginAdmin = async function() {
+            const input = document.getElementById("adminKeyInput");
+            const key = String(input?.value || "").trim();
+            if (!key) {
+                document.getElementById("adminStatus").textContent = "Enter your admin key";
+                return;
+            }
+            adminToken = key;
+            const ok = await verifyAdminWithServer();
+            if (ok) {
+                if (input) input.value = "";
+                fetchFeed(true);
+            } else {
+                document.getElementById("adminStatus").textContent = "Invalid key or verification failed";
+            }
+        };
+
+        window.logoutAdmin = function() {
+            adminToken = "";
+            isAdmin = false;
+            sessionStorage.removeItem("admin_token");
+            updateAdminControls();
+            fetchFeed(true);
+        };
 
         function initTheme() {
             const savedTheme = localStorage.getItem("app_theme") || "light";
