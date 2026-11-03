@@ -38,11 +38,12 @@ function hashtags(posts) {
   }
   return [...counts].sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,10).map(x=>x[0]);
 }
+function escapeRegex(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\function matches(post,q,tag,linkType) {"); }
 function matches(post,q,tag,linkType) {
   const text=String(post?.text ?? ""), username=String(post?.username ?? "");
   if(q && !text.toLowerCase().includes(q) && !username.toLowerCase().includes(q)) return false;
   if(tag) {
-    const re=new RegExp("(^|\\s)#"+tag.replace(/[.*+?^${}()|\\[\\]\\]/g,"\\$&")+"(?![\\w\\u0621-\\u064A])","iu");
+    const re=new RegExp("(^|\\s)#"+escapeRegex(tag)|\\[\\]\\]/g,"\\$&")+"(?![\\w\\u0621-\\u064A])","iu");
     if(!re.test(text)) return false;
   }
   if(linkType==="links" && !/https?:\/\//i.test(text)) return false;
