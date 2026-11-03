@@ -36,6 +36,12 @@ jobs:
       - name: Run Python regression tests
         run: python -m unittest discover -s tests -v
 
+      - name: Run Worker API tests
+        run: node --test tests/worker.test.js
+
+      - name: Validate Worker JavaScript
+        run: node --check worker.js
+
       - name: Validate Discovery Hub JavaScript
         run: |
           python - <<'PY'
