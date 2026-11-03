@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>DevRadar • Telegram Intelligence Hub</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
@@ -49,8 +52,8 @@
         body { background-color: var(--bg-page); color: var(--text-main); min-height: 100vh; padding-bottom: 70px; }
 
         header {
-            position: sticky; top: 0; z-index: 1000;
-            background: var(--header-bg); backdrop-filter: blur(10px);
+            position: relative; z-index: 1;
+            background: var(--header-bg);
             border-bottom: 1px solid var(--border); padding: 10px 14px;
         }
 
@@ -79,6 +82,33 @@
 
         .container-box { max-width: 650px; margin: 12px auto; padding: 0 10px; display: flex; flex-direction: column; gap: 12px; }
 
+        .layout-switch { display:flex; align-items:center; gap:4px; padding:3px; background:var(--theme-btn-bg); border:1px solid var(--border); border-radius:9px; width:max-content; }
+        .layout-switch button { border:0; border-radius:6px; padding:6px 10px; background:transparent; color:var(--text-sub); font-size:.76rem; font-weight:700; cursor:pointer; }
+        .layout-switch button.active { background:var(--bg-card); color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,.08); }
+        #feedView.feed-grid-mode { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); align-items:start; gap:10px; }
+        #feedView.feed-grid-mode .card { min-width:0; }
+        #feedView.feed-grid-mode .card-header { padding:8px; gap:5px; }
+        #feedView.feed-grid-mode .channel-info { min-width:0; gap:6px; }
+        #feedView.feed-grid-mode .channel-name { display:block; max-width:100%; overflow-wrap:anywhere; font-size:.8rem; }
+        #feedView.feed-grid-mode .channel-avatar { width:29px; height:29px; flex:0 0 29px; }
+        #feedView.feed-grid-mode .post-time { font-size:.66rem; }
+        #feedView.feed-grid-mode .card-body { padding:9px; font-size:.8rem; line-height:1.45; }
+        #feedView.feed-grid-mode .card-footer { padding:8px; gap:6px; flex-wrap:wrap; font-size:.7rem; }
+        #feedView.feed-grid-mode .card-footer a { font-size:.7rem; }
+        #feedView.feed-grid-mode .media-container img { max-height:190px; object-fit:cover; }
+        #feedView.feed-grid-mode .media-container iframe { min-height:160px; }
+        #explorerView.discovery-grid-mode .discovery-feed { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; align-items:start; }
+        #explorerView.discovery-grid-mode .discovery-domain-heading { grid-column:1 / -1; }
+        #explorerView.discovery-grid-mode .discovery-link-card { min-width:0; padding:8px; gap:5px; }
+        #explorerView.discovery-grid-mode .discovery-link-url { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+        #explorerView.discovery-grid-mode .discovery-link-snippet { -webkit-line-clamp:3; font-size:.75rem; }
+        #explorerView.discovery-grid-mode .discovery-channel-list { gap:3px; }
+        @media (min-width: 900px) {
+            #feedView.feed-grid-mode, #explorerView.discovery-grid-mode .discovery-feed { grid-template-columns:repeat(3,minmax(0,1fr)); }
+        }
+        @media (max-width: 360px) {
+            #feedView.feed-grid-mode, #explorerView.discovery-grid-mode .discovery-feed { grid-template-columns:1fr; }
+        }
         .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
         .card-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--border); }
         .channel-info { display: flex; align-items: center; gap: 10px; }
@@ -129,6 +159,57 @@
         .nav-tab-btn,.theme-toggle-btn,.lang-btn,.search-box-wrap button,.hashtag-pill,.btn-toggle-more { min-height:40px; }
         .empty-state { padding:28px 16px; text-align:center; color:var(--text-sub); background:var(--bg-card); border:1px dashed var(--border); border-radius:12px; }
         .spinner { width: 22px; height: 22px; border: 3px solid var(--border); border-top: 3px solid var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 8px; }
+        .discovery-toolbar { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:7px; margin-bottom:10px; }
+        .discovery-toolbar input { grid-column:1 / -1; min-width:0; width:100%; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:10px 11px; }
+        .discovery-toolbar select,.discovery-toolbar button,.discovery-action { min-width:0; background:var(--theme-btn-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:8px 9px; font-size:.76rem; font-weight:600; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:34px; }
+        .discovery-toolbar select { width:100%; }
+        .discovery-toolbar button { grid-column:1 / -1; justify-self:end; min-height:30px; }
+        .discovery-toolbar button:disabled,.discovery-action:disabled { opacity:.55; cursor:wait; }
+        .discovery-feed { display:flex; flex-direction:column; gap:0; }
+        .discovery-simple-row { display:flex; align-items:center; gap:10px; min-width:0; padding:9px 2px; border-bottom:1px solid var(--border); font-size:.78rem; }
+        .discovery-simple-url { flex:1 1 auto; min-width:0; color:var(--primary); text-decoration:none; overflow-wrap:anywhere; }
+        .discovery-simple-source { flex:0 1 125px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-sub); }
+        .discovery-simple-source a { color:var(--text-sub); text-decoration:none; }
+        .discovery-simple-views { flex:0 0 auto; color:var(--text-sub); white-space:nowrap; font-size:.72rem; }
+        .discovery-simple-delete { flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; width:29px; height:29px; border:1px solid transparent; border-radius:7px; background:transparent; color:var(--danger); padding:5px; cursor:pointer; }\n        .discovery-simple-delete:hover { background:var(--theme-btn-bg); border-color:var(--border); }\n        .discovery-simple-delete svg { width:16px; height:16px; fill:currentColor; }
+        .discovery-simple-delete:disabled { opacity:.5; cursor:wait; }
+        .discovery-filter-bar { display:grid; grid-template-columns:minmax(0,1fr); gap:7px; margin:0 0 10px; }
+        .discovery-filter-bar input { width:100%; min-width:0; background:var(--input-bg); color:var(--text-main); border:1px solid var(--border); border-radius:8px; padding:10px 11px; font-size:.82rem; }
+        .discovery-filter-label { color:var(--text-sub); font-size:.7rem; margin:0 0 -3px 2px; }
+        .discovery-results-count { color:var(--text-sub); font-size:.72rem; margin:0 0 6px; }
+        @media (max-width:480px) { .discovery-simple-row { gap:6px; font-size:.7rem; } .discovery-simple-source { flex-basis:85px; } }
+        .discovery-domain-heading { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:7px 2px 2px; color:var(--text-sub); font-size:.76rem; font-weight:700; }
+        .discovery-link-card { border:1px solid var(--border); border-radius:10px; padding:10px; background:var(--bg-card); display:flex; flex-direction:column; gap:6px; }
+        .discovery-layout-switch { display:flex; gap:4px; width:max-content; padding:3px; margin:-3px 0 12px; background:var(--theme-btn-bg); border:1px solid var(--border); border-radius:9px; }
+        .discovery-layout-switch button { border:0; border-radius:6px; padding:7px 13px; background:transparent; color:var(--text-sub); font-size:.78rem; font-weight:700; cursor:pointer; }
+        .discovery-layout-switch button.active { background:var(--bg-card); color:var(--primary); box-shadow:0 1px 3px rgba(0,0,0,.08); }
+        #explorerView.discovery-grid-mode .discovery-feed { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; align-items:stretch; }
+        #explorerView.discovery-grid-mode .discovery-link-card { min-width:0; height:100%; }
+        #explorerView .discovery-card-actions { display:flex; align-items:center; justify-content:space-between; gap:6px; margin-top:auto; padding-top:3px; }
+        #explorerView .discovery-open-link { color:var(--primary); text-decoration:none; font-size:1rem; font-weight:700; }
+        #explorerView .discovery-type-icon { flex:0 0 22px; }
+        #explorerView .discovery-muted-context { color:var(--text-sub); }
+        #explorerView .discovery-list-mode { display:flex; flex-direction:column; gap:0; }
+        #explorerView .discovery-list-mode .discovery-simple-row { display:flex; }
+        @media (min-width:900px) { #explorerView.discovery-grid-mode .discovery-feed { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+        @media (max-width:420px) { #explorerView.discovery-grid-mode .discovery-feed { grid-template-columns:1fr; } }
+        .discovery-link-top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+        .discovery-link-title { color:var(--primary); font-weight:700; font-size:.88rem; line-height:1.35; overflow-wrap:anywhere; text-decoration:none; }
+        .discovery-link-url { color:var(--text-sub); font-size:.72rem; overflow-wrap:anywhere; }
+        .discovery-link-snippet { color:var(--text-main); font-size:.8rem; line-height:1.45; white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+        .discovery-link-meta { display:flex; flex-wrap:wrap; gap:7px; align-items:center; color:var(--text-sub); font-size:.7rem; }
+        .discovery-channel-list { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+        .discovery-channel-chip { display:flex; align-items:center; gap:6px; width:100%; min-width:0; border:1px solid var(--border); border-radius:7px; padding:3px 5px 3px 9px; font-size:.72rem; }
+        .discovery-channel-name { color:var(--primary); font-weight:700; text-decoration:none; overflow-wrap:anywhere; min-width:0; }
+        .discovery-channel-name:hover { text-decoration:underline; }
+        .discovery-channel-spacer { flex:1 1 auto; }
+        .discovery-icon-action { display:inline-flex; align-items:center; justify-content:center; flex:0 0 23px; width:23px; height:23px; border:0; border-radius:5px; background:var(--theme-btn-bg); color:var(--primary); text-decoration:none; font-size:.9rem; font-weight:700; cursor:pointer; }
+        .discovery-icon-action.danger { color:var(--danger); margin-left:auto; }
+        .discovery-pagination { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; padding:10px 2px; flex-wrap:wrap; }\n        .discovery-page-label { color:var(--text-sub); font-size:.75rem; }
+        .discovery-warning { color:var(--text-sub); font-size:.75rem; line-height:1.45; margin:5px 0 10px; }
+        .discovery-admin-log { margin-top:12px; border-top:1px solid var(--border); padding-top:10px; }
+        @media (prefers-reduced-motion: reduce) { .spinner { animation:none; } }
+
         @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
@@ -144,10 +225,10 @@
                 <button class="theme-toggle-btn" id="themeToggleBtn" onclick="toggleTheme()">🌙 Dark</button>
             </div>
 
-            <div class="admin-access" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <div class="admin-access" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;">
                 <input id="adminKeyInput" type="password" autocomplete="current-password" placeholder="Admin key"
                     aria-label="Admin key" style="flex:1;min-width:150px;padding:9px 11px;border:1px solid var(--border);border-radius:8px;background:var(--input-bg);color:var(--text-main);">
-                <button class="theme-toggle-btn" id="adminLoginBtn" onclick="loginAdmin()">Admin login</button>
+                <button class="theme-toggle-btn" id="adminLoginBtn" onclick="loginAdmin()">Admin Login</button>
                 <button class="theme-toggle-btn" id="adminLogoutBtn" onclick="logoutAdmin()" style="display:none;">Logout</button>
                 <span id="adminStatus" role="status" style="font-size:.78rem;color:var(--text-sub);">Read-only mode</span>
             </div>
@@ -166,6 +247,10 @@
                 </div>
 
                 <div class="hashtags-bar" id="hashtagsBar"></div>
+                <div class="layout-switch" role="group" aria-label="Live Feed layout">
+                    <button type="button" data-layout-view="feed" data-layout-mode="list">☷ List</button>
+                    <button type="button" data-layout-view="feed" data-layout-mode="grid">▦ Grid</button>
+                </div>
             </div>
         </div>
     </header>
@@ -180,12 +265,13 @@
 
     <script>
         const API_BASE = "https://tele-feed-api.mohamed-ahmed408408.workers.dev";
-        const API_VERSION = "2.0.0";
         let adminToken = sessionStorage.getItem("admin_token") || "";
 
         let isAdmin = false;
         let currentView = "feed";
+        let feedLayoutMode = localStorage.getItem("feed_layout_mode") === "grid" ? "grid" : "list";
         let currentPage = 1;
+        let feedShuffleSeed = 0;
         let isFetching = false;
         let hasMore = true;
         let activeQuery = "";
@@ -209,8 +295,7 @@
             if (!adminToken) { isAdmin = false; updateAdminControls(); return false; }
             try {
                 const res = await fetch(`${API_BASE}/api/verify_admin`, {
-                    headers: { "X-Admin-Key": adminToken },
-                    cache: "no-store"
+                    headers: { "X-Admin-Key": adminToken }, cache: "no-store"
                 });
                 const data = await res.json();
                 isAdmin = res.ok && data.is_admin === true;
@@ -231,18 +316,14 @@
         window.loginAdmin = async function() {
             const input = document.getElementById("adminKeyInput");
             const key = String(input?.value || "").trim();
-            if (!key) {
-                document.getElementById("adminStatus").textContent = "Enter your admin key";
-                return;
-            }
+            const status = document.getElementById("adminStatus");
+            if (!key) { if (status) status.textContent = "Enter your admin key"; return; }
             adminToken = key;
             const ok = await verifyAdminWithServer();
             if (ok) {
                 if (input) input.value = "";
-                fetchFeed(true);
-            } else {
-                document.getElementById("adminStatus").textContent = "Invalid key or verification failed";
-            }
+                if (currentView === "explorer") renderDiscoveryRows();
+            } else if (status) status.textContent = "Invalid key or verification failed";
         };
 
         window.logoutAdmin = function() {
@@ -250,7 +331,7 @@
             isAdmin = false;
             sessionStorage.removeItem("admin_token");
             updateAdminControls();
-            fetchFeed(true);
+            if (currentView === "explorer") renderDiscoveryRows();
         };
 
         function initTheme() {
@@ -273,8 +354,32 @@
         }
         initTheme();
 
+        function applyLayoutMode(view, mode) {
+            const normalizedMode = mode === "grid" ? "grid" : "list";
+            if (view === "feed") {
+                feedLayoutMode = normalizedMode;
+                localStorage.setItem("feed_layout_mode", normalizedMode);
+                document.getElementById("feedView").classList.toggle("feed-grid-mode", normalizedMode === "grid");
+            } else {
+                discoveryLayoutMode = normalizedMode;
+                localStorage.setItem("discovery_layout_mode", normalizedMode);
+                document.getElementById("explorerView").classList.toggle("discovery-grid-mode", normalizedMode === "grid");
+            }            document.querySelectorAll('[data-layout-view="' + view + '"]').forEach(button => {
+                button.classList.toggle("active", button.dataset.layoutMode === normalizedMode);
+                button.setAttribute("aria-pressed", button.dataset.layoutMode === normalizedMode ? "true" : "false");
+            });
+        }
+
+        document.addEventListener("click", event => {
+            const button = event.target.closest("[data-layout-view][data-layout-mode]");
+            if (button) applyLayoutMode(button.dataset.layoutView, button.dataset.layoutMode);
+        });
+
         window.switchView = function(view) {
             currentView = view;
+            localStorage.setItem("last_active_view", view === "explorer" ? "explorer" : "feed");
+            applyLayoutMode("feed", feedLayoutMode);
+            applyLayoutMode("explorer", discoveryLayoutMode);
             const feedView = document.getElementById("feedView");
             const explorerView = document.getElementById("explorerView");
             const feedControls = document.getElementById("feedControls");
@@ -297,228 +402,294 @@
             }
         };
 
-        let explorerData = null;
-        let explorerCategory = "all";
-        let explorerTrend = "all";
-        let explorerFunction = "all";
-        let explorerSort = "relevance";
-        async function loadExplorerData() {
-            const explorerView = document.getElementById("explorerView");
-            const statusEl = document.getElementById("statusBox");
-            if (explorerData) { renderExplorer(); return; }
-            explorerView.innerHTML = "";
-            statusEl.style.display = "block";
-            statusEl.innerHTML = '<div class="spinner"></div>Loading discovery data…';
+        // Discovery Hub: show every URL occurrence as a simple row.
+        // Keep loading feed pages sequentially so older pages are not skipped.
+        const DISCOVERY_BATCH_SIZE = 100;
+        let discoveryPostsPage = 1;
+        let discoveryShuffleSeed = Math.floor(Math.random() * 4294967295) + 1;
+        let discoveryVisibleCount = DISCOVERY_BATCH_SIZE;
+        let discoveryHasMore = true;
+        let discoveryLoading = false;
+        let discoveryLoaded = false;
+        let discoveryItems = [];
+        let discoveryLayoutMode = localStorage.getItem("discovery_layout_mode") === "list" ? "list" : "grid";
+        let discoverySearchTerm = "";
+        let discoveryExcludeTerms = "v2ray, proxy, github, facebook, twitter, x.com, t.me, telegram.me, telegram.org,youtu.be,apps.apple,wa.me,instgram.com,wa.me,youtube.com,youtube , whatsapp";
+        let discoveryLastServerQuery = "";
+        let discoverySearchTimer = null;
 
+        function normalizeDiscoveryUrl(rawUrl) {
             try {
-                const res = await fetch(`${API_BASE}/api/explorer`);
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                explorerData = await res.json();
-                statusEl.style.display = "none";
-                renderExplorer();
-                return;
-
-            } catch (err) {
-                statusEl.innerHTML = `Could not load discovery data. <button onclick="explorerData=null;loadExplorerData()">Try again</button>`;
+                const parsed = new URL(String(rawUrl || "").replace(/[),.;!?]+$/, ""));
+                if (!["http:", "https:"].includes(parsed.protocol)) return "";
+                if (parsed.hostname.toLowerCase().startsWith("www.")) parsed.hostname = parsed.hostname.slice(4);
+                return parsed.href;
+            } catch (_) {
+                return "";
             }
         }
+
+        function extractDiscoveryUrls(text) {
+            const matches = String(text || "").match(/(?:https?:\/\/|www\.)[^\s<>"'\]]+/gi) || [];
+            return matches.map(value => normalizeDiscoveryUrl(value.startsWith("www.") ? "https://" + value : value)).filter(Boolean);
+        }
+
+        function shuffleDiscoveryArray(items) {
+            const shuffled = items.slice();
+            for (let i = shuffled.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        function discoveryChannelName(post) {
+            return String(post?.username || post?.channel || "").trim().replace(/^@/, "");
+        }
+
+        function formatDiscoveryViews(value) {
+            const n = Number(value || 0);
+            if (!Number.isFinite(n) || n <= 0) return "0";
+            if (n >= 1000000) return (n / 1000000).toFixed(n >= 10000000 ? 0 : 1).replace(/\.0$/, "") + "M";
+            if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\\.0$/, "") + "k";
+            return Math.round(n).toLocaleString();
+        }
+
+        function resetDiscoveryData() {
+            discoveryPostsPage = 1;
+            discoveryShuffleSeed = Math.floor(Math.random() * 4294967295) + 1;
+            discoveryVisibleCount = DISCOVERY_BATCH_SIZE;
+            discoveryHasMore = true;
+            discoveryLoading = false;
+            discoveryLoaded = false;
+            discoveryItems = [];
+        }
+
+        async function loadExplorerData(reset = false) {
+            if (reset) resetDiscoveryData();
+            const explorerView = document.getElementById("explorerView");
+            const statusEl = document.getElementById("statusBox");
+            if (discoveryLoading || (!discoveryHasMore && discoveryLoaded)) return;
+            discoveryLoading = true;
+            statusEl.style.display = "block";
+            statusEl.innerHTML = '<div class="spinner"></div>Loading links…';
+            try {
+                const url = `${API_BASE}/api/feed?mode=links&page=${discoveryPostsPage}&page_size=100&seed=${discoveryShuffleSeed}&_ts=${Date.now()}`;
+                const res = await fetch(url, { cache: "no-store" });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                const links = Array.isArray(data.links) ? data.links : [];
+                discoveryHasMore = Boolean(data.has_more);
+                const knownUrls = new Set(discoveryItems.map(item => item.url));
+                links.forEach(item => {
+                    if (!item || !item.url || knownUrls.has(item.url)) return;
+                    knownUrls.add(item.url);
+                    discoveryItems.push({
+                        url: item.url,
+                        username: String(item.username || ""),
+                        views: formatDiscoveryViews(item.views),
+                        postId: String(item.post_id || ""),
+                        context: String(item.context || "").slice(0, 220)
+                    });
+                });
+
+                discoveryPostsPage += 1;
+                discoveryLoaded = true;
+                statusEl.style.display = "none";
+                renderExplorer();
+                if (!posts.length) discoveryHasMore = false;
+            } catch (error) {
+                statusEl.style.display = "block";
+                statusEl.textContent = "Could not load links. " + String(error.message || error);
+            } finally {
+                discoveryLoading = false;
+                updateDiscoveryLoadButton();
+            }
+        }
+
+        function updateDiscoveryLoadButton() {
+            const status = document.getElementById("discoveryScrollStatus");
+            if (!status) return;
+            status.textContent = discoveryLoading ? "Loading…" :
+                discoveryHasMore ? "Scroll down to load more links" : "End of available links";
+        }
+
+        function getFilteredDiscoveryItems() {
+            const search = discoverySearchTerm.trim().toLowerCase();
+            const excluded = discoveryExcludeTerms.split(/[，,\n;]+/).map(term => term.trim().toLowerCase()).filter(Boolean);
+            return discoveryItems.filter(item => {
+                const url = String(item.url || "").toLowerCase();
+                if (search && !url.includes(search)) return false;
+                if (excluded.some(term => url.includes(term))) return false;
+                return true;
+            });
+        }
+
+        function getDiscoveryLinkInfo(item) {
+            let parsed;
+            try { parsed = new URL(item.url); } catch (_) { parsed = null; }
+            const host = parsed ? parsed.hostname.replace(/^www\./i, "") : "External link";
+            const path = parsed ? decodeURIComponent(parsed.pathname || "").replace(/\/+$/, "").split("/").filter(Boolean).pop() || "" : "";
+            const domain = host.toLowerCase();
+            let category = "Website";
+            let icon = "🌐";
+            if (/youtube\.com|youtu\.be|vimeo\.com|tiktok\.com/.test(domain)) { category = "Video"; icon = "▶️"; }
+            else if (/drive\.google\.com|dropbox\.com|1drv\.ms|onedrive\.live\.com|wetransfer\.com/.test(domain)) { category = "Cloud file"; icon = "📁"; }
+            else if (/github\.com|gitlab\.com|bitbucket\.org/.test(domain)) { category = "Developer"; icon = "💻"; }
+            else if (/instagram\.com|facebook\.com|x\.com|twitter\.com|linkedin\.com/.test(domain)) { category = "Social"; icon = "👥"; }
+            else if (/play\.google\.com|apps\.apple\.com/.test(domain)) { category = "App"; icon = "📱"; }
+            else if (/\.pdf(?:$|\/)/i.test(path) || /pdf/.test(domain)) { category = "Document"; icon = "📄"; }
+            const title = path && path.length > 3 ? path.replace(/[-_]/g, " ").slice(0, 58) : host;
+            return { host, category, icon, title };
+        }
+
+        function renderDiscoveryRows() {
+            const safe = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
+            const list = document.getElementById("discoveryFeedRows");
+            const count = document.getElementById("discoveryResultsCount");
+            if (!list || !count) return;
+            const filtered = getFilteredDiscoveryItems();
+            const visible = filtered.slice(0, discoveryVisibleCount);
+            count.textContent = visible.length.toLocaleString() + " matching links shown · " + filtered.length.toLocaleString() + " loaded matches";
+            if (!visible.length) {
+                list.innerHTML = '<div class="empty-state">No matching links in the loaded posts.</div>';
+                return;
+            }
+            list.innerHTML = visible.map(item => {
+                const info = getDiscoveryLinkInfo(item);
+                const channelUrl = /^[a-zA-Z0-9_]{5,}$/.test(item.username)
+                    ? "https://t.me/" + encodeURIComponent(item.username) : "";
+                const channel = channelUrl
+                    ? '<a class="discovery-channel-name" href="' + safe(channelUrl) + '" target="_blank" rel="noopener noreferrer">@' + safe(item.username) + '</a>'
+                    : '<span class="discovery-channel-name">' + (item.username ? '@' + safe(item.username) : 'Unknown channel') + '</span>';
+                const deleteButton = isAdmin && item.username
+                    ? '<button type="button" class="discovery-icon-action danger discovery-simple-delete" data-purge-username="' + safe(item.username) + '" title="Delete channel and all its posts" aria-label="Delete channel">⌫</button>'
+                    : '';
+                const context = item.context
+                    ? '<div class="discovery-link-snippet">' + safe(item.context) + '</div>'
+                    : '<div class="discovery-link-snippet discovery-muted-context">External link shared on Telegram. Open the link to view its content.</div>';
+                if (discoveryLayoutMode === "list") {
+                    return '<div class="discovery-simple-row">' +
+                        '<span class="discovery-type-icon">' + info.icon + '</span>' +
+                        '<a class="discovery-simple-url" href="' + safe(item.url) + '" target="_blank" rel="noopener noreferrer">' + safe(info.host + (info.title !== info.host ? " · " + info.title : "")) + '</a>' +
+                        '<span class="discovery-simple-source">' + channel + '</span>' +
+                        '<span class="discovery-simple-views">👁 ' + safe(item.views) + '</span>' + deleteButton + '</div>';
+                }
+                return '<article class="discovery-link-card">' +
+                    '<div class="discovery-link-top"><span class="category-badge">' + info.icon + ' ' + info.category + '</span>' +
+                    '<a class="discovery-open-link" href="' + safe(item.url) + '" target="_blank" rel="noopener noreferrer" aria-label="Open link">↗</a></div>' +
+                    '<a class="discovery-link-title" href="' + safe(item.url) + '" target="_blank" rel="noopener noreferrer">' + safe(info.title) + '</a>' +
+                    '<div class="discovery-link-url">' + safe(info.host) + '</div>' + context +
+                    '<div class="discovery-link-meta"><span>👁 ' + safe(item.views) + ' views</span><span>·</span><span>Source</span>' + channel + '</div>' +
+                    '<div class="discovery-card-actions"><button type="button" class="discovery-action" data-copy-link="' + safe(item.url) + '">Copy link</button>' + deleteButton + '</div>' +
+                    '</article>';
+            }).join("");
+            list.classList.toggle("discovery-list-mode", discoveryLayoutMode === "list");
+        }
+
+        window.setDiscoveryLayout = function(mode) {
+            discoveryLayoutMode = mode === "list" ? "list" : "grid";
+            localStorage.setItem("discovery_layout_mode", discoveryLayoutMode);
+            const explorer = document.getElementById("explorerView");
+            if (explorer) explorer.classList.toggle("discovery-grid-mode", discoveryLayoutMode === "grid");
+            document.querySelectorAll("[data-discovery-layout]").forEach(button => {
+                button.classList.toggle("active", button.dataset.discoveryLayout === discoveryLayoutMode);
+            });
+            renderDiscoveryRows();
+        };
+
+        document.addEventListener("click", async event => {
+            const copyButton = event.target.closest("[data-copy-link]");
+            if (!copyButton) return;
+            const url = copyButton.dataset.copyLink || "";
+            try {
+                await navigator.clipboard.writeText(url);
+                copyButton.textContent = "Copied";
+                setTimeout(() => { if (copyButton.isConnected) copyButton.textContent = "Copy link"; }, 1200);
+            } catch (_) {
+                window.prompt("Copy this link:", url);
+            }
+        });
+        window.updateDiscoveryFilters = function() {
+            const search = document.getElementById("discoverySearchInput");
+            const exclude = document.getElementById("discoveryExcludeInput");
+            const nextSearch = search ? search.value.trim() : "";
+            discoveryExcludeTerms = exclude ? exclude.value : "";
+
+            if (nextSearch !== discoveryLastServerQuery) {
+                discoverySearchTerm = nextSearch;
+                discoveryVisibleCount = DISCOVERY_BATCH_SIZE;
+                clearTimeout(discoverySearchTimer);
+                discoverySearchTimer = setTimeout(() => {
+                    discoveryLastServerQuery = nextSearch;
+                    loadExplorerData(true);
+                }, 350);
+                return;
+            }
+
+            discoverySearchTerm = nextSearch;
+            discoveryVisibleCount = DISCOVERY_BATCH_SIZE;
+            renderDiscoveryRows();
+        };
 
         function renderExplorer() {
             const explorerView = document.getElementById("explorerView");
-            const oldSearch = document.getElementById("explorerSearch");
-            const searchFocused = oldSearch === document.activeElement;
-            const cursor = oldSearch?.selectionStart ?? 0;
-            const data = explorerData || {};
-            const query = (oldSearch?.value || "").trim().toLowerCase();
+            const activeInput = document.activeElement;
+            const activeInputId = activeInput && explorerView.contains(activeInput) ? activeInput.id : "";
+            const selectionStart = activeInput && typeof activeInput.selectionStart === "number" ? activeInput.selectionStart : null;
+            const selectionEnd = activeInput && typeof activeInput.selectionEnd === "number" ? activeInput.selectionEnd : null;
             const safe = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
-            const safeLink = value => {
-                try {
-                    const url = new URL(value);
-                    return ["https:", "http:"].includes(url.protocol) ? safe(url.href) : "#";
-                } catch (_) { return "#"; }
-            };
-            const option = (value, label, current) =>
-                '<option value="' + safe(value) + '"' + (current === value ? ' selected' : '') + '>' + safe(label) + '</option>';
-
-            let html = '<div class="explorer-tools">' +
-                '<input id="explorerSearch" type="search" placeholder="Search tools, repos, channels…" value="' + safe(query) + '" oninput="renderExplorer()">' +
-                '<select aria-label="Discovery group" onchange="explorerCategory=this.value;renderExplorer()">' +
-                    option("all", "All discoveries", explorerCategory) +
-                    option("rising", "Rising discoveries", explorerCategory) +
-                    option("new", "New discoveries", explorerCategory) +
-                    option("ai", "AI tools", explorerCategory) +
-                    option("web", "Web gems", explorerCategory) +
-                    option("repos", "GitHub repos", explorerCategory) +
-                    option("packages", "Packages", explorerCategory) +
-                    option("domains", "Top domains", explorerCategory) +
-                '</select>' +
-                '<select aria-label="Function category" onchange="explorerFunction=this.value;renderExplorer()">' +
-                    option("all", "All functions", explorerFunction) +
-                    option("ai_coding_agents", "AI Coding & Agents", explorerFunction) +
-                    option("local_ai", "Local AI & Models", explorerFunction) +
-                    option("creative_ai", "Image, Video & Audio AI", explorerFunction) +
-                    option("automation_api", "Automation, MCP & APIs", explorerFunction) +
-                    option("self_hosted_devtools", "Self-hosted & Dev Tools", explorerFunction) +
-                    option("ai_tools", "AI Tools", explorerFunction) +
-                    option("web_utilities", "Developer Utilities", explorerFunction) +
-                '</select>' +
-                '<select aria-label="Trend filter" onchange="explorerTrend=this.value;renderExplorer()">' +
-                    option("all", "Any trend status", explorerTrend) +
-                    option("trending", "Trending", explorerTrend) +
-                    option("rising", "Rising", explorerTrend) +
-                    option("new", "New", explorerTrend) +
-                    option("popular", "Popular", explorerTrend) +
-                    option("active", "Active", explorerTrend) +
-                    option("insufficient_data", "Insufficient data", explorerTrend) +
-                '</select>' +
-                '<select aria-label="Sort discoveries" onchange="explorerSort=this.value;renderExplorer()">' +
-                    option("relevance", "Default ranking", explorerSort) +
-                    option("trend", "Trend score", explorerSort) +
-                    option("growth", "Growth rate", explorerSort) +
-                    option("newest", "Latest source post", explorerSort) +
-                    option("mentions", "Most mentions", explorerSort) +
-                    option("channels", "Most channels", explorerSort) +
-                    option("views", "Source-post view gain", explorerSort) +
-                '</select></div>';
-
-            const trendLabel = item => item.trend_status_label || ({
-                trending: "Trending", rising: "Rising", new: "New", popular: "Popular",
-                active: "Active", insufficient_data: "Insufficient data"
-            }[item.trend_status] || "Insufficient data");
-            const toDisplay = item => Object.assign({}, item, {
-                title: item.title || item.domain || item.package || "",
-                preview: item.preview || item.sample || "",
-                url: item.url || (item.domain ? "https://" + item.domain : "")
-            });
-            const matches = item => {
-                const searchable = [
-                    item.title, item.preview, item.channel, item.package, item.url, item.domain,
-                    item.category, item.category_label, item.trend_status, item.trend_status_label
-                ].join(" ").toLowerCase();
-                if (query && !searchable.includes(query)) return false;
-                if (explorerTrend !== "all" && item.trend_status !== explorerTrend) return false;
-                if (explorerFunction !== "all" && item.category !== explorerFunction) return false;
-                return true;
-            };
-            const sortItems = items => {
-                const sorted = items.map(toDisplay).slice();
-                const num = value => Number.isFinite(Number(value)) ? Number(value) : -1;
-                if (explorerSort === "trend") {
-                    sorted.sort((a,b) => num(b.trend_score) - num(a.trend_score) || num(b.mentions_6h) - num(a.mentions_6h));
-                } else if (explorerSort === "growth") {
-                    sorted.sort((a,b) => num(b.growth_ratio) - num(a.growth_ratio) || num(b.trend_score) - num(a.trend_score));
-                } else if (explorerSort === "newest") {
-                    sorted.sort((a,b) => String(b.latest_post_at || b.date || "").localeCompare(String(a.latest_post_at || a.date || "")));
-                } else if (explorerSort === "mentions") {
-                    sorted.sort((a,b) => num(b.mentions) - num(a.mentions));
-                } else if (explorerSort === "channels") {
-                    sorted.sort((a,b) => num(b.unique_channels) - num(a.unique_channels));
-                } else if (explorerSort === "views") {
-                    sorted.sort((a,b) => num(b.source_post_views_per_hour) - num(a.source_post_views_per_hour));
-                }
-                return sorted;
-            };
-            const formatNumber = value => Number(value || 0).toLocaleString();
-            const formatAge = value => {
-                if (value === null || value === undefined || value === "") return "";
-                const minutes = Math.max(0, Number(value) || 0);
-                if (minutes < 60) return Math.round(minutes) + "m ago";
-                if (minutes < 1440) return Math.floor(minutes / 60) + "h ago";
-                return Math.floor(minutes / 1440) + "d ago";
-            };
-            const formatDate = value => String(value || "").substring(0,16).replace("T"," ");
-            const linkCard = (item, icon, typeBadge) => {
-                const trend = String(item.trend_status || "insufficient_data").toLowerCase();
-                const trendClass = ["trending","rising","new"].includes(trend) ? " trend-" + trend : "";
-                const uniqueChannels = Number(item.unique_channels || 0);
-                const mentions = Number(item.mentions || 0);
-                const category = item.category_label || "Developer Utilities";
-                const latest = item.latest_post_at || item.date || "";
-                const ageText = item.post_age_minutes !== null && item.post_age_minutes !== undefined
-                    ? "Latest source post: " + formatAge(item.post_age_minutes)
-                    : (latest ? "Latest source post: " + formatDate(latest) : "Latest source-post time unavailable");
-                const sampleCount = Number(item.source_post_view_samples || 0);
-                let viewText = "View velocity waiting for repeat snapshots";
-                if (sampleCount > 0 && item.source_post_views_delta !== null && item.source_post_views_delta !== undefined) {
-                    const delta = Number(item.source_post_views_delta || 0);
-                    const sign = delta > 0 ? "+" : "";
-                    viewText = "Linked Telegram posts: " + sign + formatNumber(delta) + " views across " +
-                        formatNumber(sampleCount) + " measured posts";
-                    if (item.source_post_views_per_hour !== null && item.source_post_views_per_hour !== undefined) {
-                        viewText += " · " + formatNumber(Math.round(Number(item.source_post_views_per_hour))) + " views/hour combined";
+            let html = '<div class="explorer-section">' +
+                '<div class="explorer-title">🔮 Discovery Hub · All Links</div>' +
+                '<div class="discovery-layout-switch" role="group" aria-label="Discovery layout">' +
+                '<button type="button" data-discovery-layout="grid" class="' + (discoveryLayoutMode === "grid" ? "active" : "") + '" onclick="setDiscoveryLayout(\'grid\')">▦ Grid</button>' +
+                '<button type="button" data-discovery-layout="list" class="' + (discoveryLayoutMode === "list" ? "active" : "") + '" onclick="setDiscoveryLayout(\'list\')">☷ List</button></div>' +
+                '<div class="discovery-filter-bar">' +
+                '<input id="discoverySearchInput" type="search" placeholder="Search links, e.g. github" value="' + safe(discoverySearchTerm) + '" oninput="updateDiscoveryFilters()">' +
+                '<label class="discovery-filter-label" for="discoveryExcludeInput">Exclude links containing these words, separate with commas</label>' +
+                '<input id="discoveryExcludeInput" type="text" placeholder="github, proxy" value="' + safe(discoveryExcludeTerms) + '" oninput="updateDiscoveryFilters()">' +
+                '</div>' +
+                '<div class="discovery-results-count" id="discoveryResultsCount"></div>' +
+                '<div class="discovery-feed" id="discoveryFeedRows"></div>' +
+                '<div class="discovery-pagination" id="discoveryScrollStatus">' +
+                (discoveryHasMore ? 'Scroll down to load more links' : 'End of available links') +
+                '</div></div>';
+            explorerView.innerHTML = html;
+            explorerView.classList.toggle("discovery-grid-mode", discoveryLayoutMode === "grid");
+            renderDiscoveryRows();
+            if (activeInputId) {
+                const restoredInput = document.getElementById(activeInputId);
+                if (restoredInput) {
+                    restoredInput.focus({ preventScroll: true });
+                    if (selectionStart !== null && selectionEnd !== null) {
+                        try { restoredInput.setSelectionRange(selectionStart, selectionEnd); } catch (_) {}
                     }
                 }
-                const channel = String(item.channel || "").trim().replace(/^@/,"");
-                const source = channel
-                    ? '<div class="discovery-note">Source channel: <a href="https://t.me/' + safe(encodeURIComponent(channel)) + '" target="_blank" rel="noopener noreferrer">@' + safe(channel) + '</a></div>'
-                    : "";
-                return '<div class="item-card">' +
-                    '<div class="item-header"><a rel="noopener noreferrer" href="' + safeLink(item.url) + '" target="_blank" class="item-name">' +
-                        icon + ' ' + safe(item.title) + '</a><span class="mention-badge">' + safe(typeBadge) + ' ' +
-                        formatNumber(mentions) + ' posts · ' + formatNumber(uniqueChannels) + ' channels</span></div>' +
-                    '<div class="discovery-meta"><span class="trend-badge' + trendClass + '">' + safe(trendLabel(item)) + '</span>' +
-                        '<span class="category-badge">' + safe(category) + '</span>' +
-                        '<span class="mention-badge">Trend ' + formatNumber(item.trend_score || 0) + '/100</span></div>' +
-                    '<div class="item-preview">' + safe(String(item.preview || "").replace(/https?:\/\/[^\s]+/g,"").trim()) + '</div>' +
-                    '<div class="discovery-note">' + safe(ageText) + ' · 6h posts: ' + formatNumber(item.mentions_6h || 0) +
-                        ' · prior 24h: ' + formatNumber(item.mentions_previous_24h || 0) +
-                        (item.growth_ratio !== null && item.growth_ratio !== undefined ? ' · growth ' + safe(item.growth_ratio) + 'x' : '') + '</div>' +
-                    '<div class="discovery-note">' + safe(viewText) + '</div>' + source + '</div>';
-            };
-            const renderSection = (title, items, icon, badge) => {
-                const displayed = sortItems(items || []).filter(matches);
-                return '<div class="explorer-section"><div class="explorer-title">' + title +
-                    ' (' + displayed.length + ')</div>' +
-                    (displayed.length ? displayed.map(item => linkCard(item, icon, badge)).join("") :
-                        '<div class="discovery-note">No items match these filters.</div>') + '</div>';
-            };
-            const allTrendItems = (data.top_rising || []).map(toDisplay);
-            const allNewItems = (data.top_new || []).map(toDisplay);
-            const domains = (data.top_100_domains || []).map(toDisplay);
-            const packages = sortItems(data.top_packages || []).filter(matches);
-
-            if (explorerCategory === "all" || explorerCategory === "rising") {
-                html += renderSection("📈 Rising Discoveries", allTrendItems, "📈", "Rise");
-            }
-            if (explorerCategory === "all" || explorerCategory === "new") {
-                html += renderSection("🆕 New Discoveries", allNewItems, "🆕", "New");
-            }
-            if (explorerCategory === "all" || explorerCategory === "ai") {
-                html += renderSection("🤖 AI Tools & Portals", data.top_ai_tools || [], "🤖", "AI");
-            }
-            if (explorerCategory === "all" || explorerCategory === "web") {
-                html += renderSection("🔮 Web Gems & Utilities", data.top_web_gems || [], "🌐", "Web");
-            }
-            if (explorerCategory === "all" || explorerCategory === "repos") {
-                html += renderSection("🐙 GitHub Repositories", data.top_repos || [], "🐙", "Repo");
-            }
-            if (explorerCategory === "all" || explorerCategory === "packages") {
-                html += '<div class="explorer-section"><div class="explorer-title">⚙️ Packages (' + packages.length + ')</div><div class="pill-grid">' +
-                    packages.map(p => '<span class="tag-badge">⚙️ ' + safe(p.package) + ' <b style="color:var(--primary);font-size:.7rem">(' + formatNumber(p.mentions) + ')</b></span>').join("") +
-                    '</div></div>';
-            }
-            if (explorerCategory === "all" || explorerCategory === "domains") {
-                html += renderSection("🌐 Top Domains", domains, "🔗", "Domain");
-            }
-
-            const updated = data.updated_at ? formatDate(data.updated_at) + " UTC" : "unknown";
-            const snapshotCount = Number((data.view_tracking || {}).posts_with_valid_repeat_snapshots || 0);
-            html = '<div class="explorer-section"><div class="explorer-title">Discovery status</div>' +
-                '<div class="discovery-note">Data updated: ' + safe(updated) +
-                ' · Trend sample: ' + formatNumber(data.scan_window_posts || 0) + ' posts' +
-                ' · Posts with repeat view snapshots: ' + formatNumber(snapshotCount) +
-                '. Trend uses Telegram post publication timestamps; view gain uses measured Telegram post snapshots, not destination-site analytics.</div></div>' + html;
-
-            explorerView.innerHTML = html;
-            const newSearch = document.getElementById("explorerSearch");
-            if (searchFocused && newSearch) {
-                newSearch.focus();
-                try { newSearch.setSelectionRange(cursor, cursor); } catch (_) {}
-            }
-            if (query && !explorerView.querySelector(".item-card, .tag-badge")) {
-                explorerView.insertAdjacentHTML("beforeend", '<div class="empty-state">No discoveries match. Try another search or category.</div>');
             }
         }
+
+        window.refreshDiscovery = function() {
+            loadExplorerData(true);
+        };
+
+        let discoveryScrollTicking = false;
+        window.addEventListener("scroll", () => {
+            if (currentView !== "explorer" || discoveryLoading || discoveryScrollTicking) return;
+            if ((window.innerHeight + window.scrollY) < document.body.offsetHeight - 500) return;            discoveryScrollTicking = true;
+            requestAnimationFrame(async () => {
+                try {
+                    if (discoveryVisibleCount < discoveryItems.length) {
+                        discoveryVisibleCount += DISCOVERY_BATCH_SIZE;
+                        renderExplorer();
+                    } else if (discoveryHasMore) {
+                        discoveryVisibleCount += DISCOVERY_BATCH_SIZE;
+                        await loadExplorerData(false);
+                    }
+                } finally {
+                    discoveryScrollTicking = false;
+                }
+            });
+        });
 
         window.setLang = function(lang, btnElement) {
             activeLang = lang;
@@ -538,16 +709,18 @@
             if (isReset) {
                 if (!activeQuery.trim() && !activeLang) {
                     currentPage = Math.floor(Math.random() * 40) + 1;
+                    feedShuffleSeed = Math.random();
                 } else {
                     currentPage = 1;
+                    feedShuffleSeed = 0;
                 }
                 hasMore = true;
                 document.getElementById("feedView").innerHTML = "";
             }
 
             try {
-                const url = `${API_BASE}/api/feed?page=${currentPage}&q=${encodeURIComponent(activeQuery)}&lang=${encodeURIComponent(activeLang)}`;
-                const res = await fetch(url);
+                const url = `${API_BASE}/api/feed?page=${currentPage}&q=${encodeURIComponent(activeQuery)}&lang=${encodeURIComponent(activeLang)}&_ts=${Date.now()}`;
+                const res = await fetch(url, { cache: "no-store" });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
 
@@ -562,7 +735,15 @@
                 }
 
                 if (data.posts && data.posts.length > 0) {
-                    renderPosts(data.posts);
+                    const postsToRender = data.posts.slice();
+                    // Shuffle unfiltered feed results on each fresh visit.
+                    if (!activeQuery.trim() && !activeLang) {
+                        for (let i = postsToRender.length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [postsToRender[i], postsToRender[j]] = [postsToRender[j], postsToRender[i]];
+                        }
+                    }
+                    renderPosts(postsToRender);
                     currentPage++;
                     hasMore = data.has_more;
                 } else if (isReset) {
@@ -660,6 +841,7 @@
                 `;
                 feed.appendChild(card);
             });
+            applyLayoutMode("feed", feedLayoutMode);
         }
 
         window.toggleReadMore = function(btn) {
@@ -699,34 +881,44 @@
             if (!isAdmin) return;
             const normalizedUsername = String(username || "").trim().replace(/^@/, "");
             if (!normalizedUsername) return;
+            if (!window.confirm(`Delete @${normalizedUsername} and all its posts from the database?`)) return;
+
+            const normalizedLower = normalizedUsername.toLowerCase();
             const cards = Array.from(document.querySelectorAll(".card")).filter(
-                card => (card.dataset.username || "").toLowerCase() === normalizedUsername.toLowerCase()
+                card => (card.dataset.username || "").toLowerCase() === normalizedLower
             );
-            const buttons = cards.flatMap(card => Array.from(card.querySelectorAll(".btn-trash")));
+            const buttons = Array.from(document.querySelectorAll("[data-purge-username]")).filter(
+                button => String(button.dataset.purgeUsername || "").toLowerCase() === normalizedLower
+            );
             const statusEl = document.getElementById("statusBox");
-            buttons.forEach(button => { button.disabled = true; button.setAttribute("aria-label", `Removing @${normalizedUsername}…`); });
+            buttons.forEach(button => { button.disabled = true; button.innerHTML = "…"; });
             try {
-                const res = await fetch(`${API_BASE}/api/purge`, {
+                const res = await fetch(`${API_BASE}/api/purge?username=${encodeURIComponent(normalizedUsername)}`, {
                     method: "POST",
-                    headers: { "X-Admin-Key": adminToken, "Content-Type": "application/json" },
-                    body: JSON.stringify({ username: normalizedUsername })
+                    headers: { "X-Admin-Key": adminToken }
                 });
                 const payload = await res.clone().json().catch(() => null);
                 if (!res.ok || payload?.success === false || payload?.ok === false) {
                     throw new Error(payload?.error || payload?.message || `Server returned HTTP ${res.status}`);
                 }
                 cards.forEach(card => card.remove());
-                statusEl.textContent = `Purge request accepted for @${normalizedUsername}.`;
-                statusEl.style.display = "block";
+                discoveryItems = discoveryItems.filter(item => item.username.toLowerCase() !== normalizedLower);
+                if (currentView === "explorer") renderDiscoveryRows();
+                if (statusEl) {
+                    statusEl.textContent = `Purge request accepted for @${normalizedUsername}.`;
+                    statusEl.style.display = "block";
+                }
             } catch (error) {
-                buttons.forEach(button => { button.disabled = false; button.removeAttribute("aria-label"); });
-                statusEl.textContent = `Could not purge @${normalizedUsername}. ${error.message}. Posts were kept; please retry.`;
-                statusEl.style.display = "block";
+                buttons.forEach(button => { button.disabled = false; button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>'; });
+                if (statusEl) {
+                    statusEl.textContent = `Could not purge @${normalizedUsername}. ${error.message}. Posts were kept; please retry.`;
+                    statusEl.style.display = "block";
+                }
             }
         }
 
         document.addEventListener("click", event => {
-            const button = event.target.closest(".btn-trash[data-purge-username]");
+            const button = event.target.closest(".btn-trash[data-purge-username], .discovery-simple-delete[data-purge-username]");
             if (button) purgeChannel(button.dataset.purgeUsername);
         });
 
@@ -738,7 +930,9 @@
 
         (async () => {
             await verifyAdminWithServer();
-            fetchFeed(true);
+            const savedView = localStorage.getItem("last_active_view") === "explorer" ? "explorer" : "feed";
+            if (savedView === "explorer") switchView("explorer");
+            else { switchView("feed"); fetchFeed(true); }
         })();
     </script>
 </body>
