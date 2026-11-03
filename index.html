@@ -449,6 +449,20 @@
                     });
                 });
 
+                // Shuffle the final unique link list on every fresh Discovery load.
+                // Avoid repeating the same opening links from the previous visit.
+                if (discoveryPostsPage === 1 && discoveryItems.length > 1) {
+                    const previousOpening = localStorage.getItem("discovery_last_opening") || "";
+                    let shuffledItems = shuffleDiscoveryArray(discoveryItems);
+                    let opening = shuffledItems.slice(0, Math.min(10, shuffledItems.length)).map(item => item.url).join("|");
+                    for (let attempt = 0; opening === previousOpening && attempt < 8; attempt++) {
+                        shuffledItems = shuffleDiscoveryArray(discoveryItems);
+                        opening = shuffledItems.slice(0, Math.min(10, shuffledItems.length)).map(item => item.url).join("|");
+                    }
+                    discoveryItems = shuffledItems;
+                    localStorage.setItem("discovery_last_opening", opening);
+                }
+
                 discoveryPostsPage += 1;
                 discoveryLoaded = true;
                 statusEl.style.display = "none";
