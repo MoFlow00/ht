@@ -46,7 +46,7 @@ function matches(post, q, tag, linkType) {
   const username = String(post?.username ?? "");
   if (q && !text.toLowerCase().includes(q) && !username.toLowerCase().includes(q)) return false;
   if (tag) {
-    const re = new RegExp("(^|\\\\s)#" + escapeRegex(tag) + "(?![\\\\w\\\\u0621-\\\\u064A])", "iu");
+    const re = new RegExp("(^|\\s)#" + escapeRegex(tag) + "(?![\\w\\u0621-\\u064A])", "iu");
     if (!re.test(text)) return false;
   }
   if (linkType === "links" && !/https?:\\/\\//i.test(text)) return false;
