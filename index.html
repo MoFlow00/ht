@@ -350,7 +350,7 @@
         let discoveryLoaded = false;
         let discoveryItems = [];
         let discoverySearchTerm = "";
-        let discoveryExcludeTerms = "";
+        let discoveryExcludeTerms = "v2ray, proxy, github, facebook, twitter, x.com, t.me, telegram.me, telegram.org";
         let discoveryLastServerQuery = "";
         let discoverySearchTimer = null;
 
@@ -520,6 +520,10 @@
 
         function renderExplorer() {
             const explorerView = document.getElementById("explorerView");
+            const activeInput = document.activeElement;
+            const activeInputId = activeInput && explorerView.contains(activeInput) ? activeInput.id : "";
+            const selectionStart = activeInput && typeof activeInput.selectionStart === "number" ? activeInput.selectionStart : null;
+            const selectionEnd = activeInput && typeof activeInput.selectionEnd === "number" ? activeInput.selectionEnd : null;
             const safe = value => String(value ?? "").replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
             let html = '<div class="explorer-section">' +
                 '<div class="explorer-title">🔮 Discovery Hub · All Links</div>' +
@@ -535,6 +539,15 @@
                 '</div></div>';
             explorerView.innerHTML = html;
             renderDiscoveryRows();
+            if (activeInputId) {
+                const restoredInput = document.getElementById(activeInputId);
+                if (restoredInput) {
+                    restoredInput.focus({ preventScroll: true });
+                    if (selectionStart !== null && selectionEnd !== null) {
+                        try { restoredInput.setSelectionRange(selectionStart, selectionEnd); } catch (_) {}
+                    }
+                }
+            }
         }
 
         window.refreshDiscovery = function() {
