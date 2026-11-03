@@ -49,8 +49,8 @@ function matches(post, q, tag, linkType) {
     const re = new RegExp("(^|\\s)#" + escapeRegex(tag) + "(?![\\w\\u0621-\\u064A])", "iu");
     if (!re.test(text)) return false;
   }
-  if (linkType === "links" && !/https?:\\/\\//i.test(text)) return false;
-  if (linkType === "no-links" && /https?:\\/\\//i.test(text)) return false;
+  if (linkType === "links" && !/https?:\/\//i.test(text)) return false;
+  if (linkType === "no-links" && /https?:\/\//i.test(text)) return false;
   return true;
 }
 async function admin(request,env) {
