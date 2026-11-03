@@ -65,7 +65,57 @@ async function limited(request,env,scope,max=12) {
   if(current.count>=max) return false;
   await putJSON(env.DATA_STORE,key,{count:current.count+1,until:current.until}); return true;
 }
+function seededShuffle(items, seed) {
+  let state = (Number(seed) >>> 0) || 1;
+  const random = () => {
+    state ^= state << 13; state ^= state >>> 17; state ^= state << 5;
+    return (state >>> 0) / 4294967296;
+  };
+  const out = items.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+async function feedLinks(url,env) {
+  const page=intParam(url.searchParams.get("page"),1,1,100000);
+  const size=intParam(url.searchParams.get("page_size")||"100",100,1,MAX_PAGE_SIZE);
+  const seed=intParam(url.searchParams.get("seed"),1,1,2147483647);
+  const [posts,blockedValue]=await Promise.all([
+    getJSON(env.DATA_STORE,"latest_posts",[]),getJSON(env.DATA_STORE,"blacklist",[])
+  ]);
+  if(!Array.isArray(posts)||!Array.isArray(blockedValue)) return response({error:"Stored data format invalid"},502);
+  const blocked=new Set(blockedValue.map(norm).filter(Boolean));
+  const seen=new Set(), links=[];
+  const urlPattern=/(?:https?:\\/\\/|www\\.)[^\\s<>"'\\]]+/gi;
+  for(const post of posts) {
+    const username=norm(post?.username);
+    if(!username || blocked.has(username)) continue;
+    const text=String(post?.text??"");
+    const context=text.replace(urlPattern," ").replace(/\\s+/g," ").trim().slice(0,220);
+    for(const match of text.matchAll(urlPattern)) {
+      let raw=String(match[0]).replace(/[),.;!?]+$/,"");
+      if(raw.startsWith("www.")) raw="https://"+raw;
+      let normalized;
+      try {
+        const parsed=new URL(raw);
+        if(parsed.protocol!=="http:"&&parsed.protocol!=="https:") continue;
+        if(parsed.hostname.toLowerCase().startsWith("www.")) parsed.hostname=parsed.hostname.slice(4);
+        normalized=parsed.href;
+      } catch { continue; }
+      if(seen.has(normalized)) continue;
+      seen.add(normalized);
+      links.push({url:normalized,username,views:Number(post?.views)||0,post_id:String(post?.post_id||""),context});
+    }
+  }
+  const shuffled=seededShuffle(links,seed);
+  const start=(page-1)*size;
+  return response({page,page_size:size,seed,total:shuffled.length,has_more:start+size<shuffled.length,
+    links:shuffled.slice(start,start+size)},200,{"Cache-Control":"no-store"});
+}
 async function feed(url,env) {
+  if (url.searchParams.get("mode")==="links") return feedLinks(url,env);
   const page=intParam(url.searchParams.get("page"),1,1,100000);
   const size=intParam(url.searchParams.get("page_size")||url.searchParams.get("limit"),DEFAULT_PAGE_SIZE,1,MAX_PAGE_SIZE);
   const q=String(url.searchParams.get("q")||"").trim().slice(0,MAX_SEARCH_LENGTH).toLowerCase();
