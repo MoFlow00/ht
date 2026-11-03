@@ -88,7 +88,7 @@ async function feedLinks(url,env) {
   if(!Array.isArray(posts)||!Array.isArray(blockedValue)) return response({error:"Stored data format invalid"},502);
   const blocked=new Set(blockedValue.map(norm).filter(Boolean));
   const seen=new Set(), links=[];
-  const urlPattern=/(?:https?:\\/\\/|www\\.)[^\\s<>"'\\]]+/gi;
+  const urlPattern=/(?:https?:\/\/|www\.)[^\s<>"'\]]+/gi;
   for(const post of posts) {
     const username=norm(post?.username);
     if(!username || blocked.has(username)) continue;
