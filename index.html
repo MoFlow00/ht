@@ -612,6 +612,7 @@
                 (discoveryHasMore ? 'Scroll down to load more links' : 'End of available links') +
                 '</div></div>';
             explorerView.innerHTML = html;
+            explorerView.classList.toggle("discovery-grid-mode", discoveryLayoutMode === "grid");
             renderDiscoveryRows();
             if (activeInputId) {
                 const restoredInput = document.getElementById(activeInputId);
