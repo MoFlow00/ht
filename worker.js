@@ -81,6 +81,26 @@ function seededShuffle(items, seed) {
 async function feedLinks(url,env) {
   const page=intParam(url.searchParams.get("page"),1,1,100000);
   const size=intParam(url.searchParams.get("page_size")||"100",100,1,MAX_PAGE_SIZE);
+  // Preferred path: prebuilt catalog generated from every historical Parquet partition.
+  const meta=await getJSON(env.DATA_STORE,"discovery_links_meta",null);
+  if(meta && Number.isFinite(Number(meta.total)) && Number.isFinite(Number(meta.pages))) {
+    const catalogPageSize=intParam(meta.page_size,500,1,1000);
+    const start=(page-1)*size;
+    const firstCatalogPage=Math.floor(start/catalogPageSize);
+    const lastCatalogPage=Math.floor((start+size-1)/catalogPageSize);
+    const pageKeys=[];
+    for(let i=firstCatalogPage;i<=lastCatalogPage;i++) {
+      if(i>=Number(meta.pages)) break;
+      pageKeys.push("discovery_links_page_"+String(i).padStart(6,"0"));
+    }
+    const chunks=await Promise.all(pageKeys.map(key=>getJSON(env.DATA_STORE,key,[])));
+    const catalog=chunks.flat();
+    const offset=start-firstCatalogPage*catalogPageSize;
+    const links=catalog.slice(offset,offset+size);
+    return response({page,page_size:size,total:Number(meta.total),has_more:start+links.length<Number(meta.total),
+      links,source:meta.source||"historical_catalog",generated_at:meta.generated_at||null},200,{"Cache-Control":"public, max-age=60, stale-while-revalidate=300"});
+  }
+  // Backward-compatible fallback until the first full-history catalog is published.
   const seed=intParam(url.searchParams.get("seed"),1,1,2147483647);
   const [posts,blockedValue]=await Promise.all([
     getJSON(env.DATA_STORE,"latest_posts",[]),getJSON(env.DATA_STORE,"blacklist",[])
