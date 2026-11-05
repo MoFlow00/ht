@@ -519,7 +519,7 @@
             else if (/github\\.com|gitlab\\.com|bitbucket\\.org/.test(domain)) { category = "Developer"; icon = "💻"; }
             else if (/instagram\\.com|facebook\\.com|x\\.com|twitter\\.com|linkedin\\.com/.test(domain)) { category = "Social"; icon = "👥"; }
             else if (/play\\.google\\.com|apps\\.apple\\.com/.test(domain)) { category = "App"; icon = "📱"; }
-            else if (/\\.pdf(?:$|\\/)/i.test(path) || /pdf/.test(domain)) { category = "Document"; icon = "📄"; }
+            else if (/\.pdf(?:$|\/)/i.test(path) || /pdf/.test(domain)) { category = "Document"; icon = "📄"; }
             const title = path && path.length > 3 ? path.replace(/[-_]/g, " ").slice(0, 58) : host;
             return { host, category, icon, title };
         }
