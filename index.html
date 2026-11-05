@@ -511,7 +511,7 @@
             let parsed;
             try { parsed = new URL(item.url); } catch (_) { parsed = null; }
             const host = parsed ? parsed.hostname.replace(/^www\\./i, "") : "External link";
-            const path = parsed ? decodeURIComponent(parsed.pathname || "").replace(/\\/+$/, "").split("/").filter(Boolean).pop() || "" : "";
+            const path = parsed ? decodeURIComponent(parsed.pathname || "").replace(/\/+$/, "").split("/").filter(Boolean).pop() || "" : "";
             const domain = host.toLowerCase();
             let category = "Website", icon = "🌐";
             if (/youtube\\.com|youtu\\.be|vimeo\\.com|tiktok\\.com/.test(domain)) { category = "Video"; icon = "▶️"; }
