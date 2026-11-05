@@ -561,6 +561,100 @@ def extract_and_push_explorer_data(posts_df):
         f"{len(top_rising)} rising and {len(top_new)} new discoveries."
     )
 
+
+# Build a global URL catalog from every historical Parquet partition.
+DISCOVERY_PAGE_SIZE = 500
+DISCOVERY_URL_RE = re.compile(r"""(?:https?://|www\\.)[^\\s<>\\"'\\]]+""", re.IGNORECASE)
+
+def normalize_discovery_url(raw):
+    from urllib.parse import urlsplit, urlunsplit
+    raw = re.sub(r"[),.;!?]+$", "", str(raw or "").strip())
+    if raw.lower().startswith("www."):
+        raw = "https://" + raw
+    try:
+        parts = urlsplit(raw)
+        if parts.scheme.lower() not in ("http", "https") or not parts.hostname:
+            return ""
+        host = parts.hostname.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        port = parts.port
+        netloc = host
+        if port and not ((parts.scheme.lower() == "http" and port == 80) or (parts.scheme.lower() == "https" and port == 443)):
+            netloc += f":{port}"
+        return urlunsplit((parts.scheme.lower(), netloc, parts.path or "/", parts.query, parts.fragment))
+    except Exception:
+        return ""
+
+def collect_discovery_links(frame, seen, output):
+    if frame.empty or "text" not in frame.columns:
+        return
+    for row in frame.to_dict("records"):
+        username = normalize_username(row.get("username", ""))
+        if not username:
+            continue
+        body = str(row.get("text") or "")
+        context = re.sub(DISCOVERY_URL_RE, " ", body)
+        context = re.sub(r"\\s+", " ", context).strip()[:220]
+        for match in DISCOVERY_URL_RE.finditer(body):
+            url = normalize_discovery_url(match.group(0))
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            try:
+                views = int(float(row.get("views") or 0))
+            except (TypeError, ValueError):
+                views = 0
+            output.append({
+                "url": url, "username": username, "views": views,
+                "post_id": str(row.get("post_id") or ""), "context": context
+            })
+
+def push_discovery_catalog(links):
+    cf_token = os.getenv("CF_API_TOKEN")
+    cf_account = os.getenv("CF_ACCOUNT_ID")
+    cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
+    if not (cf_token and cf_account and cf_kv_id):
+        raise RuntimeError("Cloudflare KV credentials are required to publish the Discovery URL catalog")
+    import random
+    random.Random(20261106).shuffle(links)
+    headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
+    base = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}"
+    old_meta = {}
+    meta_url = f"{base}/values/discovery_links_meta"
+    old_res = requests.get(meta_url, headers=headers, timeout=30)
+    if old_res.status_code == 200:
+        try:
+            old_meta = old_res.json()
+        except Exception:
+            old_meta = {}
+    pages = [links[i:i + DISCOVERY_PAGE_SIZE] for i in range(0, len(links), DISCOVERY_PAGE_SIZE)]
+    entries = [{"key": f"discovery_links_page_{i:06d}", "value": json.dumps(page, ensure_ascii=False, separators=(",", ":"))} for i, page in enumerate(pages)]
+    # Cloudflare bulk writes accept up to 10,000 KV pairs per request.
+    for start in range(0, len(entries), 500):
+        batch = entries[start:start + 500]
+        response = requests.put(f"{base}/bulk", headers=headers, json=batch, timeout=120)
+        response.raise_for_status()
+        result = response.json()
+        if not result.get("success", False):
+            raise RuntimeError(f"Cloudflare rejected Discovery catalog batch: {result.get('errors', result)}")
+        print(f"[*] Published Discovery catalog pages {start + 1}-{start + len(batch)} / {len(entries)}")
+    meta = {
+        "total": len(links), "pages": len(pages), "page_size": DISCOVERY_PAGE_SIZE,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "source": "all_historical_parquet_partitions"
+    }
+    response = requests.put(meta_url, headers=headers, json=meta, timeout=30)
+    response.raise_for_status()
+    if not response.json().get("success", False):
+        raise RuntimeError("Cloudflare rejected Discovery catalog metadata")
+    old_pages = int(old_meta.get("pages", 0) or 0)
+    stale = [f"discovery_links_page_{i:06d}" for i in range(len(pages), old_pages)]
+    for start in range(0, len(stale), 500):
+        response = requests.delete(f"{base}/bulk", headers=headers, json=stale[start:start + 500], timeout=60)
+        response.raise_for_status()
+    print(f"[✓] Discovery catalog published: {len(links):,} unique URLs across {len(pages):,} pages.")
+
 def push_to_cloudflare_kv(posts_df):
     """فلترة وضخ حتى 8,000 منشور نشط مع ترتيب قائم على الجودة والتفاعل"""
     cf_token = os.getenv("CF_API_TOKEN")
@@ -772,6 +866,8 @@ def sync_partitioned_posts(blacklist, purge_rules):
 
     all_2026_df = pd.DataFrame()
     total_posts_all_years = 0
+    discovery_links = []
+    discovery_seen_urls = set()
 
     for year, meta in manifest_data.items():
         partition_filename = meta.get("file", f"posts_{year}.parquet")
@@ -813,6 +909,8 @@ def sync_partitioned_posts(blacklist, purge_rules):
         if purged_p > 0:
             print(f"[🔥] Permanently purged {purged_p:,} posts from {partition_filename}!")
 
+        collect_discovery_links(merged_year, discovery_seen_urls, discovery_links)
+
         if year == "2026":
             all_2026_df = merged_year
 
@@ -846,6 +944,7 @@ def sync_partitioned_posts(blacklist, purge_rules):
     )
 
     push_to_cloudflare_kv(all_2026_df)
+    push_discovery_catalog(discovery_links)
 
     for y in manifest_data:
         total_posts_all_years += manifest_data[y].get("total_rows", 0)
