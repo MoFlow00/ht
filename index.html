@@ -656,7 +656,7 @@
             if (statusEl) statusEl.style.display = "block";
 
             if (isReset) {
-                // Start at a different point across the stored feed on every fresh visit.
+                // Rotate the starting offset across the full feed, then continue sequentially.
                 currentPage = (!activeQuery.trim() && !activeLang)
                     ? Math.floor(Math.random() * 100000) + 1
                     : 1;
