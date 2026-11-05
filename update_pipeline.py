@@ -564,7 +564,7 @@ def extract_and_push_explorer_data(posts_df):
 
 # Build a global URL catalog from every historical Parquet partition.
 DISCOVERY_PAGE_SIZE = 500
-DISCOVERY_URL_RE = re.compile(r"""(?:https?://|www\\.)[^\\s<>\\"'\\]]+""", re.IGNORECASE)
+DISCOVERY_URL_RE = re.compile(r"""(?:https?://|www\.)[^\s<>"'\]]+""", re.IGNORECASE)
 
 def normalize_discovery_url(raw):
     from urllib.parse import urlsplit, urlunsplit
@@ -595,7 +595,7 @@ def collect_discovery_links(frame, seen, output):
             continue
         body = str(row.get("text") or "")
         context = re.sub(DISCOVERY_URL_RE, " ", body)
-        context = re.sub(r"\\s+", " ", context).strip()[:220]
+        context = re.sub(r"\s+", " ", context).strip()[:220]
         for match in DISCOVERY_URL_RE.finditer(body):
             url = normalize_discovery_url(match.group(0))
             if not url or url in seen:
@@ -617,7 +617,7 @@ def push_discovery_catalog(links):
     if not (cf_token and cf_account and cf_kv_id):
         raise RuntimeError("Cloudflare KV credentials are required to publish the Discovery URL catalog")
     import random
-    random.Random(20261106).shuffle(links)
+    random.SystemRandom().shuffle(links)
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
     base = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}"
     old_meta = {}
