@@ -656,10 +656,9 @@
             if (statusEl) statusEl.style.display = "block";
 
             if (isReset) {
-                // Rotate the starting offset across the full feed, then continue sequentially.
-                currentPage = (!activeQuery.trim() && !activeLang)
-                    ? Math.floor(Math.random() * 100000) + 1
-                    : 1;
+                // Always start from a valid first page. Random offsets caused empty feeds
+                // when the requested page exceeded the stored inventory.
+                currentPage = 1;
                 hasMore = true;
                 document.getElementById("feedView").innerHTML = "";
             }
