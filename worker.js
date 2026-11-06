@@ -184,7 +184,7 @@ async function purge(request,url,env) {
   const audit=Array.isArray(oldAudit)?oldAudit:[];
   audit.unshift({username,purged_posts:removed,timestamp:new Date().toISOString(),action:"purge"});
   await putJSON(env.DATA_STORE,"purge_audit",audit.slice(0,200));
-  return response({success:true,purged:username,purged_posts:removed,remaining_posts:clean.length,blacklisted:true});
+  return response({success:true,purged:username,purged_from_live_feed:removed,remaining_posts:clean.length,queued_for_permanent_deletion:true,note:"The next successful sync removes this channel from every historical Parquet partition and c.parquet, then clears the queue."});
 }
 async function restore(request,env) {
   if(request.method!=="POST") return response({error:"Method not allowed"},405,{Allow:"POST"});
