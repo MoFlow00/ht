@@ -72,20 +72,6 @@ def get_cloudflare_blacklist(required=False):
         return set()
 
 
-def put_cloudflare_blacklist(blacklist):
-    """Persist channel purges so Worker feeds and future sync runs keep them removed."""
-    url = cloudflare_blacklist_url()
-    if not url:
-        raise RuntimeError("Cannot persist purged channels: Cloudflare KV credentials are missing")
-    headers = {"Authorization": f"Bearer {os.getenv('CF_API_TOKEN')}", "Content-Type": "application/json"}
-    response = requests.put(url, headers=headers, data=json.dumps(sorted(blacklist)), timeout=30)
-    response.raise_for_status()
-    result = response.json()
-    if isinstance(result, dict) and result.get("success") is False:
-        raise RuntimeError(f"Cloudflare rejected blacklist update: {result.get('errors', result)}")
-    print(f"[✓] Saved {len(blacklist)} channels in the pending purge queue.")
-
-
 def clear_processed_purge_queue(processed):
     """Remove only channels fully purged from Parquet and c.parquet."""
     if not processed:
@@ -197,8 +183,7 @@ def sync_channels(blacklist):
 
     api.upload_file(
         path_or_fileobj=out_c_file,
-        path_in_repo="c.parquet",
-        repo_id=HF_REPO_ID,
+        path_in_repo="c.parquet",        repo_id=HF_REPO_ID,
         repo_type="dataset",
         commit_message=f"Sync & purge channels: {len(merged_c):,} total"
     )
@@ -397,8 +382,7 @@ def extract_and_push_explorer_data(posts_df):
                     "channel": username,
                     "score": score,
                 })
-            elif utility_pattern.search(text_lower):
-                web_counter[dom] += 1
+            elif utility_pattern.search(text_lower):                web_counter[dom] += 1
                 if username:
                     web_channels[dom].add(username)
                 web_meta.setdefault(dom, {
@@ -597,8 +581,7 @@ def extract_and_push_explorer_data(posts_df):
 
 
 # Build a global URL catalog from every historical Parquet partition.
-DISCOVERY_PAGE_SIZE = 1000
-DISCOVERY_URL_RE = re.compile(r"""(?:https?://|www\.)[^\s<>"'\]]+""", re.IGNORECASE)
+DISCOVERY_PAGE_SIZE = 1000DISCOVERY_URL_RE = re.compile(r"""(?:https?://|www\.)[^\s<>"'\]]+""", re.IGNORECASE)
 
 def normalize_discovery_url(raw):
     from urllib.parse import urlsplit, urlunsplit
@@ -670,7 +653,9 @@ def push_discovery_catalog(links):
     changed_entries = []
     for index, page in enumerate(pages):
         value = json.dumps(page, ensure_ascii=False, separators=(",", ":"))
-        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+        stable_page = [{key: item.get(key) for key in ("url", "username", "post_id", "context")} for item in page]
+        stable_value = json.dumps(stable_page, ensure_ascii=False, separators=(",", ":"))
+        digest = hashlib.sha256(stable_value.encode("utf-8")).hexdigest()
         page_hashes.append(digest)
         if index >= len(old_hashes) or old_hashes[index] != digest:
             changed_entries.append({"key": f"discovery_links_page_{index:06d}", "value": value})
@@ -797,8 +782,7 @@ def discover_purge_channels(manifest_data, new_posts_df, purge_rules, existing_m
             chunk = new_posts_df[new_posts_df["year_partition"] == year].drop(columns=["year_partition"], errors="ignore")
         existing = pd.DataFrame()
         try:
-            path = hf_hub_download(repo_id=HF_REPO_ID, filename=filename, repo_type="dataset", token=HF_TOKEN)
-            existing = pd.read_parquet(path)
+            path = hf_hub_download(repo_id=HF_REPO_ID, filename=filename, repo_type="dataset", token=HF_TOKEN)            existing = pd.read_parquet(path)
         except Exception as exc:
             if year in existing_manifest_years:
                 raise RuntimeError(f"Cannot safely inspect historical partition {filename}: {exc}") from exc
@@ -998,40 +982,3 @@ def sync_partitioned_posts(blacklist, purge_rules):
 
     push_to_cloudflare_kv(all_2026_df)
     push_discovery_catalog(discovery_links)
-
-    for y in manifest_data:
-        total_posts_all_years += manifest_data[y].get("total_rows", 0)
-
-    return len(new_posts_df), total_posts_all_years
-
-def main():
-    print("\n" + "=" * 65)
-    print("🚀 بدء مزامنة ورفع وتوسيع استكشاف البيانات...")
-    print("=" * 65)
-
-    purge_rules = load_purge_rules()
-    blacklist = get_cloudflare_blacklist(required=True)
-    p_crawled, p_total = sync_partitioned_posts(blacklist, purge_rules)
-    c_crawled, c_total, c_remaining = sync_channels(blacklist)
-
-    # Clear only after every historical partition and the channel inventory are uploaded.
-    clear_processed_purge_queue(blacklist)
-
-    c_checked = c_total - c_remaining
-    progress_pct = (c_checked / c_total * 100) if c_total > 0 else 0
-
-    print("\n" + "╔" + "═" * 63 + "╗")
-    print("║          🔥 تقرير إنجاز الجولة الحالية (Round Dashboard)       ║")
-    print("╠" + "═" * 63 + "╣")
-    print(f"║ 📥 قنوات تم فحصها وتحديثها الجولة دي : {c_crawled:,} قناة")
-    print(f"║ 💬 منشورات جديدة تم إضافتها للسحابة   : +{p_crawled:,} بوست جديد")
-    print("╠" + "═" * 63 + "╣")
-    print(f"║ 📊 إجمالي القنوات الكلي في القاعدة    : {c_total:,} قناة")
-    print(f"║ ✅ إجمالي القنوات المفحوصة حتى الآن  : {c_checked:,} قناة")
-    print(f"║ ⏳ المتبقي في الطابور للفحص           : {c_remaining:,} قناة")
-    print(f"║ 📈 نسبة إنجاز الطابور الكلي          : {progress_pct:.2f}%")
-    print(f"║ 📚 إجمالي المنشورات الكلي في السحابة  : {p_total:,} بوست")
-    print("╚" + "═" * 63 + "╝\n")
-
-if __name__ == "__main__":
-    main()
