@@ -1,7 +1,7 @@
 /**
  * Tele-API V2. Existing KV binding: DATA_STORE.
  * Required secret: ADMIN_API_KEY.
- * Existing keys retained: latest_posts, blacklist, curated_explorer_data.
+ * Existing keys retained: latest_posts, blacklist (pending purge queue), curated_explorer_data.
  */
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_PAGE_SIZE = 100;
@@ -174,7 +174,7 @@ async function purge(request,url,env) {
   if(!Array.isArray(block)) return response({error:"Blacklist data format invalid"},502);
   const next=[...new Set(block.map(norm).filter(Boolean))];
   if(!next.includes(username)) next.push(username);
-  // Persist blacklist before feed cleanup so subsequent crawler syncs fail closed.
+  // Queue permanent deletion. The sync pipeline clears this entry only after Parquet and c.parquet are uploaded.
   await putJSON(env.DATA_STORE,"blacklist",next);
   const posts=await getJSON(env.DATA_STORE,"latest_posts",[]);
   if(!Array.isArray(posts)) return response({error:"Feed data format invalid"},502);
@@ -189,18 +189,11 @@ async function purge(request,url,env) {
 async function restore(request,env) {
   if(request.method!=="POST") return response({error:"Method not allowed"},405,{Allow:"POST"});
   if(!await admin(request,env)) return response({error:"Unauthorized"},401);
-  let data; try { data=await request.json(); } catch { return response({error:"Invalid JSON"},400); }
-  const username=norm(data?.username);
-  if(!username||username.length>MAX_USERNAME_LENGTH||! /^[a-z0-9_]+$/i.test(username))
-    return response({error:"Invalid username"},400);
-  const block=await getJSON(env.DATA_STORE,"blacklist",[]);
-  if(!Array.isArray(block)) return response({error:"Blacklist data format invalid"},502);
-  await putJSON(env.DATA_STORE,"blacklist",[...new Set(block.map(norm).filter(x=>x&&x!==username))]);
-  const old=await getJSON(env.DATA_STORE,"purge_audit",[]), audit=Array.isArray(old)?old:[];
-  audit.unshift({username,timestamp:new Date().toISOString(),purged_posts:0,action:"restore"});
-  await putJSON(env.DATA_STORE,"purge_audit",audit.slice(0,200));
-  return response({success:true,restored:username,note:"Future crawler syncs will allow this channel. Deleted historical posts are not reconstructed."});
+  return response({
+    error:"Permanent deletion is irreversible. Restoring a channel requires a fresh source record and a new crawl."
+  },410);
 }
+
 async function stats(env) {
   const [posts,block,explorer]=await Promise.all([
     getJSON(env.DATA_STORE,"latest_posts",[]),getJSON(env.DATA_STORE,"blacklist",[]),
