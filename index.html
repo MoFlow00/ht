@@ -416,7 +416,8 @@
         let discoveryTotalLinks = null;
         let discoveryLayoutMode = localStorage.getItem("discovery_layout_mode") === "list" ? "list" : "grid";
         let discoverySearchTerm = "";
-        let discoveryExcludeTerms = "";
+        const DEFAULT_DISCOVERY_EXCLUDE_TERMS = "v2ray, proxy, github, facebook, twitter, x.com, t.me, telegram.me, telegram.org";
+        let discoveryExcludeTerms = DEFAULT_DISCOVERY_EXCLUDE_TERMS;
         let discoveryLastServerQuery = "";
         let discoverySearchTimer = null;
 
