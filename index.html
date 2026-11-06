@@ -398,6 +398,8 @@
                 feedControls.style.display = "none";
                 tabFeedBtn.classList.remove("active");
                 tabExplorerBtn.classList.add("active");
+                // Build the Discovery Hub DOM before loading its first batch.
+                renderExplorer();
                 loadExplorerData();
             }
         };
