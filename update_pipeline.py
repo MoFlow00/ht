@@ -584,7 +584,8 @@ def extract_and_push_explorer_data(posts_df):
 
 
 # Build a global URL catalog from every historical Parquet partition.
-DISCOVERY_PAGE_SIZE = 1000DISCOVERY_URL_RE = re.compile(r"""(?:https?://|www\.)[^\s<>"'\]]+""", re.IGNORECASE)
+DISCOVERY_PAGE_SIZE = 1000
+DISCOVERY_URL_RE = re.compile(r"""(?:https?://|www\.)[^\s<>"'\]]+""", re.IGNORECASE)
 
 def normalize_discovery_url(raw):
     from urllib.parse import urlsplit, urlunsplit
