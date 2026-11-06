@@ -2,6 +2,7 @@ import os
 import re
 import json
 import math
+import hashlib
 import requests
 import pandas as pd
 from collections import Counter, defaultdict
@@ -43,7 +44,7 @@ def cloudflare_blacklist_url():
 
 
 def get_cloudflare_blacklist(required=False):
-    """Load the persistent blacklist; fail closed when a safe sync requires it."""
+    """Load the pending permanent-purge queue; fail closed when a safe sync requires it."""
     url = cloudflare_blacklist_url()
     cf_token = os.getenv("CF_API_TOKEN")
     if not url:
@@ -82,7 +83,37 @@ def put_cloudflare_blacklist(blacklist):
     result = response.json()
     if isinstance(result, dict) and result.get("success") is False:
         raise RuntimeError(f"Cloudflare rejected blacklist update: {result.get('errors', result)}")
-    print(f"[✓] Persisted {len(blacklist)} blacklisted channels to Cloudflare KV.")
+    print(f"[✓] Saved {len(blacklist)} channels in the pending purge queue.")
+
+
+def clear_processed_purge_queue(processed):
+    """Remove only channels fully purged from Parquet and c.parquet."""
+    if not processed:
+        print("[*] No pending channel deletions to clear.")
+        return
+    url = cloudflare_blacklist_url()
+    if not url:
+        raise RuntimeError("Cannot clear purge queue: Cloudflare KV credentials are missing")
+    headers = {"Authorization": f"Bearer {os.getenv('CF_API_TOKEN')}", "Content-Type": "application/json"}
+    response = requests.get(url, headers=headers, timeout=20)
+    if response.status_code == 404:
+        print("[*] Purge queue is already empty.")
+        return
+    response.raise_for_status()
+    current = response.json()
+    if not isinstance(current, list):
+        raise ValueError("Cloudflare purge queue must be a JSON array")
+    current_set = {normalize_username(value) for value in current if normalize_username(value)}
+    remaining = sorted(current_set - set(processed))
+    if remaining == sorted(current_set):
+        print("[*] No processed channels were present in the live purge queue.")
+        return
+    response = requests.put(url, headers=headers, json=remaining, timeout=30)
+    response.raise_for_status()
+    result = response.json()
+    if isinstance(result, dict) and result.get("success") is False:
+        raise RuntimeError(f"Cloudflare rejected purge queue cleanup: {result.get('errors', result)}")
+    print(f"[✓] Purge queue cleared: {len(current_set) - len(remaining):,} completed, {len(remaining):,} new pending.")
 
 
 def load_purge_rules(path="purge_rules.json"):
@@ -136,14 +167,19 @@ def sync_channels(blacklist):
         new_c_df = pd.read_parquet(new_c_path)
 
     existing_c_df = pd.DataFrame()
+    existing_channels_loaded = False
     try:
         old_path = hf_hub_download(repo_id=HF_REPO_ID, filename="c.parquet", repo_type="dataset", token=HF_TOKEN)
         existing_c_df = pd.read_parquet(old_path)
-    except Exception:
-        pass
+        existing_channels_loaded = True
+    except Exception as exc:
+        if blacklist:
+            raise RuntimeError(f"Cannot safely remove purged channels because c.parquet could not be loaded: {exc}") from exc
 
     merged_c = pd.concat([existing_c_df, new_c_df], ignore_index=True)
     if merged_c.empty:
+        if blacklist and not existing_channels_loaded:
+            raise RuntimeError("Cannot clear purge queue: channel database c.parquet is unavailable")
         return 0, 0, 0
 
     merged_c = merged_c.drop_duplicates(subset=["username"], keep="last")
@@ -197,8 +233,7 @@ def extract_and_push_explorer_data(posts_df):
     ai_counter = Counter()
     ai_channels = defaultdict(set)
     ai_meta = {}
-    web_counter = Counter()
-    web_channels = defaultdict(set)
+    web_counter = Counter()    web_channels = defaultdict(set)
     web_meta = {}
     github_counter = Counter()
     github_channels = defaultdict(set)
@@ -397,8 +432,7 @@ def extract_and_push_explorer_data(posts_df):
                 "channel": username,
             })
             if has_view_sample:
-                repo_view_delta[normalized_repo] += int(view_delta)
-                repo_view_rate[normalized_repo] += view_rate
+                repo_view_delta[normalized_repo] += int(view_delta)                repo_view_rate[normalized_repo] += view_rate
                 repo_view_samples[normalized_repo] += 1
 
         seen_packages = set()
@@ -563,7 +597,7 @@ def extract_and_push_explorer_data(posts_df):
 
 
 # Build a global URL catalog from every historical Parquet partition.
-DISCOVERY_PAGE_SIZE = 500
+DISCOVERY_PAGE_SIZE = 1000
 DISCOVERY_URL_RE = re.compile(r"""(?:https?://|www\.)[^\s<>"'\]]+""", re.IGNORECASE)
 
 def normalize_discovery_url(raw):
@@ -597,8 +631,7 @@ def collect_discovery_links(frame, seen, output):
         context = re.sub(DISCOVERY_URL_RE, " ", body)
         context = re.sub(r"\s+", " ", context).strip()[:220]
         for match in DISCOVERY_URL_RE.finditer(body):
-            url = normalize_discovery_url(match.group(0))
-            if not url or url in seen:
+            url = normalize_discovery_url(match.group(0))            if not url or url in seen:
                 continue
             seen.add(url)
             try:
@@ -611,49 +644,71 @@ def collect_discovery_links(frame, seen, output):
             })
 
 def push_discovery_catalog(links):
+    """Publish only changed catalog pages. Stable ordering prevents needless KV rewrites."""
     cf_token = os.getenv("CF_API_TOKEN")
     cf_account = os.getenv("CF_ACCOUNT_ID")
     cf_kv_id = os.getenv("CF_KV_NAMESPACE_ID")
     if not (cf_token and cf_account and cf_kv_id):
         raise RuntimeError("Cloudflare KV credentials are required to publish the Discovery URL catalog")
-    import random
-    random.SystemRandom().shuffle(links)
+
+    links.sort(key=lambda item: (str(item.get("url", "")).casefold(), str(item.get("post_id", ""))))
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
     base = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}"
-    old_meta = {}
     meta_url = f"{base}/values/discovery_links_meta"
+    old_meta = {}
     old_res = requests.get(meta_url, headers=headers, timeout=30)
     if old_res.status_code == 200:
-        try:
-            old_meta = old_res.json()
-        except Exception:
-            old_meta = {}
+        old_meta = old_res.json()
+        if not isinstance(old_meta, dict):
+            raise ValueError("Discovery catalog metadata has an invalid format")
+    elif old_res.status_code != 404:
+        old_res.raise_for_status()
+
     pages = [links[i:i + DISCOVERY_PAGE_SIZE] for i in range(0, len(links), DISCOVERY_PAGE_SIZE)]
-    entries = [{"key": f"discovery_links_page_{i:06d}", "value": json.dumps(page, ensure_ascii=False, separators=(",", ":"))} for i, page in enumerate(pages)]
-    # Cloudflare bulk writes accept up to 10,000 KV pairs per request.
-    for start in range(0, len(entries), 500):
-        batch = entries[start:start + 500]
+    old_hashes = old_meta.get("page_hashes", [])
+    page_hashes = []
+    changed_entries = []
+    for index, page in enumerate(pages):
+        value = json.dumps(page, ensure_ascii=False, separators=(",", ":"))
+        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()
+        page_hashes.append(digest)
+        if index >= len(old_hashes) or old_hashes[index] != digest:
+            changed_entries.append({"key": f"discovery_links_page_{index:06d}", "value": value})
+
+    old_pages = int(old_meta.get("pages", 0) or 0)
+    stale = [f"discovery_links_page_{i:06d}" for i in range(len(pages), old_pages)]
+    changed = bool(changed_entries or stale or old_meta.get("total") != len(links)
+                   or old_meta.get("page_hashes") != page_hashes)
+
+    for start in range(0, len(changed_entries), 500):
+        batch = changed_entries[start:start + 500]
         response = requests.put(f"{base}/bulk", headers=headers, json=batch, timeout=120)
         response.raise_for_status()
         result = response.json()
         if not result.get("success", False):
             raise RuntimeError(f"Cloudflare rejected Discovery catalog batch: {result.get('errors', result)}")
-        print(f"[*] Published Discovery catalog pages {start + 1}-{start + len(batch)} / {len(entries)}")
-    meta = {
-        "total": len(links), "pages": len(pages), "page_size": DISCOVERY_PAGE_SIZE,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "source": "all_historical_parquet_partitions"
-    }
-    response = requests.put(meta_url, headers=headers, json=meta, timeout=30)
-    response.raise_for_status()
-    if not response.json().get("success", False):
-        raise RuntimeError("Cloudflare rejected Discovery catalog metadata")
-    old_pages = int(old_meta.get("pages", 0) or 0)
-    stale = [f"discovery_links_page_{i:06d}" for i in range(len(pages), old_pages)]
+        print(f"[*] Updated Discovery catalog pages {start + 1}-{start + len(batch)} / {len(changed_entries)} changed pages")
+
+    if changed:
+        meta = {
+            "total": len(links), "pages": len(pages), "page_size": DISCOVERY_PAGE_SIZE,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "source": "all_historical_parquet_partitions",
+            "page_hashes": page_hashes,
+        }
+        response = requests.put(meta_url, headers=headers, json=meta, timeout=30)
+        response.raise_for_status()
+        if not response.json().get("success", False):
+            raise RuntimeError("Cloudflare rejected Discovery catalog metadata")
+
     for start in range(0, len(stale), 500):
         response = requests.delete(f"{base}/bulk", headers=headers, json=stale[start:start + 500], timeout=60)
         response.raise_for_status()
-    print(f"[✓] Discovery catalog published: {len(links):,} unique URLs across {len(pages):,} pages.")
+
+    if changed:
+        print(f"[✓] Discovery catalog updated: {len(links):,} unique URLs, {len(changed_entries):,} changed pages.")
+    else:
+        print(f"[*] Discovery catalog unchanged: skipped all {len(pages):,} KV page writes.")
 
 def push_to_cloudflare_kv(posts_df):
     """فلترة وضخ حتى 8,000 منشور نشط مع ترتيب قائم على الجودة والتفاعل"""
@@ -797,8 +852,7 @@ def attach_view_history(existing_df, new_df):
                 parsed_old_views = float(old["views"])
                 old_views = parsed_old_views if math.isfinite(parsed_old_views) else None
             if pd.notna(row.get("views")):
-                parsed_current_views = float(row["views"])
-                current_views = parsed_current_views if math.isfinite(parsed_current_views) else None
+                parsed_current_views = float(row["views"])                current_views = parsed_current_views if math.isfinite(parsed_current_views) else None
         except (TypeError, ValueError):
             old_views, current_views = None, None
 
@@ -861,8 +915,7 @@ def sync_partitioned_posts(blacklist, purge_rules):
         newly_blocked = discover_purge_channels(manifest_data, new_posts_df, purge_rules, existing_manifest_years) - blacklist
         if newly_blocked:
             blacklist.update(newly_blocked)
-            put_cloudflare_blacklist(blacklist)
-            print(f"[🔥] Exact rules matched and permanently blacklisted {len(newly_blocked):,} channels.")
+            print(f"[🔥] Exact rules found {len(newly_blocked):,} channels for permanent deletion.")
 
     all_2026_df = pd.DataFrame()
     total_posts_all_years = 0
@@ -960,6 +1013,9 @@ def main():
     blacklist = get_cloudflare_blacklist(required=True)
     p_crawled, p_total = sync_partitioned_posts(blacklist, purge_rules)
     c_crawled, c_total, c_remaining = sync_channels(blacklist)
+
+    # Clear only after every historical partition and the channel inventory are uploaded.
+    clear_processed_purge_queue(blacklist)
 
     c_checked = c_total - c_remaining
     progress_pct = (c_checked / c_total * 100) if c_total > 0 else 0
