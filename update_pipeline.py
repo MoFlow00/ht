@@ -183,7 +183,8 @@ def sync_channels(blacklist):
 
     api.upload_file(
         path_or_fileobj=out_c_file,
-        path_in_repo="c.parquet",        repo_id=HF_REPO_ID,
+        path_in_repo="c.parquet",
+        repo_id=HF_REPO_ID,
         repo_type="dataset",
         commit_message=f"Sync & purge channels: {len(merged_c):,} total"
     )
@@ -383,7 +384,8 @@ def extract_and_push_explorer_data(posts_df):
                     "channel": username,
                     "score": score,
                 })
-            elif utility_pattern.search(text_lower):                web_counter[dom] += 1
+            elif utility_pattern.search(text_lower):
+                web_counter[dom] += 1
                 if username:
                     web_channels[dom].add(username)
                 web_meta.setdefault(dom, {
@@ -783,7 +785,8 @@ def discover_purge_channels(manifest_data, new_posts_df, purge_rules, existing_m
             chunk = new_posts_df[new_posts_df["year_partition"] == year].drop(columns=["year_partition"], errors="ignore")
         existing = pd.DataFrame()
         try:
-            path = hf_hub_download(repo_id=HF_REPO_ID, filename=filename, repo_type="dataset", token=HF_TOKEN)            existing = pd.read_parquet(path)
+            path = hf_hub_download(repo_id=HF_REPO_ID, filename=filename, repo_type="dataset", token=HF_TOKEN)
+            existing = pd.read_parquet(path)
         except Exception as exc:
             if year in existing_manifest_years:
                 raise RuntimeError(f"Cannot safely inspect historical partition {filename}: {exc}") from exc
@@ -837,7 +840,8 @@ def attach_view_history(existing_df, new_df):
                 parsed_old_views = float(old["views"])
                 old_views = parsed_old_views if math.isfinite(parsed_old_views) else None
             if pd.notna(row.get("views")):
-                parsed_current_views = float(row["views"])                current_views = parsed_current_views if math.isfinite(parsed_current_views) else None
+                parsed_current_views = float(row["views"])
+                current_views = parsed_current_views if math.isfinite(parsed_current_views) else None
         except (TypeError, ValueError):
             old_views, current_views = None, None
 
