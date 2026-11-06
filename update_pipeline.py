@@ -218,7 +218,8 @@ def extract_and_push_explorer_data(posts_df):
     ai_counter = Counter()
     ai_channels = defaultdict(set)
     ai_meta = {}
-    web_counter = Counter()    web_channels = defaultdict(set)
+    web_counter = Counter()
+    web_channels = defaultdict(set)
     web_meta = {}
     github_counter = Counter()
     github_channels = defaultdict(set)
