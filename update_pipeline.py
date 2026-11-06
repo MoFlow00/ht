@@ -419,7 +419,8 @@ def extract_and_push_explorer_data(posts_df):
                 "channel": username,
             })
             if has_view_sample:
-                repo_view_delta[normalized_repo] += int(view_delta)                repo_view_rate[normalized_repo] += view_rate
+                repo_view_delta[normalized_repo] += int(view_delta)
+                repo_view_rate[normalized_repo] += view_rate
                 repo_view_samples[normalized_repo] += 1
 
         seen_packages = set()
