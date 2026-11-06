@@ -619,7 +619,8 @@ def collect_discovery_links(frame, seen, output):
         context = re.sub(DISCOVERY_URL_RE, " ", body)
         context = re.sub(r"\s+", " ", context).strip()[:220]
         for match in DISCOVERY_URL_RE.finditer(body):
-            url = normalize_discovery_url(match.group(0))            if not url or url in seen:
+            url = normalize_discovery_url(match.group(0))
+            if not url or url in seen:
                 continue
             seen.add(url)
             try:
