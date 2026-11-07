@@ -990,3 +990,33 @@ def sync_partitioned_posts(blacklist, purge_rules):
 
     push_to_cloudflare_kv(all_2026_df)
     push_discovery_catalog(discovery_links)
+
+def main():
+    print("\\n" + "=" * 68)
+    print("🚀 Starting crawler data sync and permanent channel deletion")
+    print("=" * 68)
+
+    purge_rules = load_purge_rules()
+    blacklist = get_cloudflare_blacklist(required=True)
+    print(f"[DELETE] Pending channel deletions loaded: {len(blacklist):,}")
+
+    p_crawled, p_total = sync_partitioned_posts(blacklist, purge_rules)
+    c_crawled, c_total, c_remaining = sync_channels(blacklist)
+
+    # Do not clear the queue until all historical post partitions and c.parquet
+    # have been uploaded successfully.
+    clear_processed_purge_queue(blacklist)
+
+    c_checked = c_total - c_remaining
+    progress_pct = (c_checked / c_total * 100) if c_total else 0
+    print("\\n" + "=" * 68)
+    print(f"[DELETE] Completed permanent channel cleanup for {len(blacklist):,} queued channels.")
+    print(f"[SYNC] New posts: {p_crawled:,}. Total posts: {p_total:,}.")
+    print(f"[SYNC] Channels processed: {c_crawled:,}. Total channels: {c_total:,}.")
+    print(f"[SYNC] Checked channels: {c_checked:,}. Remaining unchecked: {c_remaining:,}.")
+    print(f"[SYNC] Channel check progress: {progress_pct:.2f}%")
+    print("=" * 68)
+
+
+if __name__ == "__main__":
+    main()
