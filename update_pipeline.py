@@ -572,6 +572,17 @@ def extract_and_push_explorer_data(posts_df):
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/curated_explorer_data"
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
+    old_res = requests.get(url, headers=headers, timeout=30)
+    if old_res.status_code == 200:
+        old_payload = old_res.json()
+        old_compare = {k: v for k, v in old_payload.items() if k != "updated_at"} if isinstance(old_payload, dict) else None
+        new_compare = {k: v for k, v in explorer_payload.items() if k != "updated_at"}
+        if old_compare == new_compare:
+            print("[*] Explorer data unchanged: skipped KV write.")
+            return
+    elif old_res.status_code != 404:
+        old_res.raise_for_status()
+
     res = requests.put(url, headers=headers, json=explorer_payload, timeout=30)
     res.raise_for_status()
     result = res.json()
@@ -769,8 +780,24 @@ def push_to_cloudflare_kv(posts_df):
 
     url = f"https://api.cloudflare.com/client/v4/accounts/{cf_account}/storage/kv/namespaces/{cf_kv_id}/values/latest_posts"
     headers = {"Authorization": f"Bearer {cf_token}", "Content-Type": "application/json"}
-    res = requests.put(url, headers=headers, json=latest_subset)
-    if res.status_code == 200:
+    old_res = requests.get(url, headers=headers, timeout=30)
+    if old_res.status_code == 200:
+        try:
+            if old_res.json() == latest_subset:
+                print("[*] Live Feed unchanged: skipped KV write.")
+            else:
+                old_res = None
+        except ValueError:
+            old_res = None
+    elif old_res.status_code != 404:
+        old_res.raise_for_status()
+
+    if old_res is None or old_res.status_code == 404:
+        res = requests.put(url, headers=headers, json=latest_subset, timeout=60)
+        res.raise_for_status()
+        result = res.json()
+        if isinstance(result, dict) and result.get("success") is False:
+            raise RuntimeError(f"Cloudflare rejected Live Feed update: {result.get('errors', result)}")
         print(f"[✓] Live Feed pushed {len(latest_subset):,} posts to Cloudflare KV!")
 
     # تشغيل محرك استكشاف الكنوز والكيانات
@@ -955,6 +982,7 @@ def sync_partitioned_posts(blacklist, purge_rules):
             print(f"[🔥] Permanently purged {purged_p:,} posts from {partition_filename}!")
 
         collect_discovery_links(merged_year, discovery_seen_urls, discovery_links)
+        total_posts_all_years += len(merged_year)
 
         if year == "2026":
             all_2026_df = merged_year
