@@ -991,6 +991,9 @@ def sync_partitioned_posts(blacklist, purge_rules):
     push_to_cloudflare_kv(all_2026_df)
     push_discovery_catalog(discovery_links)
 
+    # Return the same two metrics consumed by main().
+    return len(new_posts_df), total_posts_all_years
+
 def main():
     print("\\n" + "=" * 68)
     print("🚀 Starting crawler data sync and permanent channel deletion")
